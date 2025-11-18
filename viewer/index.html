@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>🌿 Forest Grid Map Viewer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Leaflet core -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Patch for MultiPolygon -->
+  <script>
+    if (typeof L.MultiPolygon === "undefined") {
+      L.MultiPolygon = function(latlngs, options) {
+        return new L.Polygon(latlngs, options);
+      };
+    }
+  </script>
+
+  <!-- Leaflet KML parser -->
+  <script src="https://unpkg.com/leaflet-kml@latest/L.KML.js"></script>
+
+  <!-- ✅ Working measurement plugin -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-measure-path@2.2.0/leaflet-measure-path.css" />
+  <script src="https://unpkg.com/leaflet-measure-path@2.2.0/leaflet-measure-path.min.js"></script>
+
+  <style>
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      background: #ecf8ef;
+    }
+    #header {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.95);
+      padding: 8px 16px;
+      border-radius: 10px;
+      font-family: Arial, sans-serif;
+      font-weight: 600;
+      font-size: 16px;
+      color: #2b9348;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+      z-index: 9999;
+    }
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(255, 255, 255, 0.95);
+      padding: 18px 36px;
+      border-radius: 12px;
+      font-family: Arial, sans-serif;
+      font-size: 15px;
+      color: #2b9348;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+      z-index: 9998;
+      transition: opacity 0.4s ease;
+    }
+    .grid-label { pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div id="header">🌿 Forest Department — Grid Viewer</div>
+  <div id="loading">📂 Fetching KML... please wait</div>
+  <div id="map"></div>
+
+  <script>
+    const map = L.map("map").setView([11.3, 78.5], 10);
+
+    const base = L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      { attribution: "&copy; Esri — Satellite Imagery", maxZoom: 19 }
+    ).addTo(map);
+
+    // ✅ Add working measurement control (leaflet-measure-path)
+    if (L.control.measurePath) {
+      L.control.measurePath({
+        showUnitControl: true,
+        measureArea: true,
+        measureDistance: true,
+        position: "topleft",
+        activeColor: "#2b9348",
+        completedColor: "#ff6600"
+      }).addTo(map);
+    } else {
+      console.warn("⚠️ Measurement plugin not loaded.");
+    }
+
+    // Loader handler
+    function hideLoader() {
+      const el = document.getElementById("loading");
+      el.style.opacity = "0";
+      setTimeout(() => (el.style.display = "none"), 400);
+    }
+
+    // --- Fetch KML ---
+    const params = new URLSearchParams(window.location.search);
+    const fileId = params.get("id");
+    if (!fileId) {
+      alert("❌ Missing KML ID in URL!");
+      throw new Error("No ?id= parameter");
+    }
+
+    const kmlUrl = `https://cdn.jsdelivr.net/gh/krishnaSureshFor/tnforest_kml_to_grid_v2.0@main/public_kml/${fileId}.kml`;
+    console.log("📂 Fetching KML from:", kmlUrl);
+
+    fetch(kmlUrl)
+      .then(res => {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.text();
+      })
+      .then(kmlText => {
+        const clean = kmlText.replace(/<\/*\w+:/g, m => m.replace(/[\w:]+:/, ""));
+        const xml = new DOMParser().parseFromString(clean, "text/xml");
+        const kml = new L.KML(xml);
+
+        const gridGroup = L.layerGroup();
+        const overlayGroup = L.layerGroup();
+
+        // ✅ Safe handling for undefined names
+        kml.eachLayer(l => {
+          const name = (l?.feature?.properties?.name ?? "").toString().toLowerCase();
+          if (name.includes("overlay")) overlayGroup.addLayer(l);
+          else gridGroup.addLayer(l);
+        });
+
+        gridGroup.addTo(map);
+        overlayGroup.addTo(map);
+
+        L.control.layers(null, {
+          "Grid Cells": gridGroup,
+          "Overlay Boundary": overlayGroup
+        }).addTo(map);
+
+        setTimeout(() => {
+          try {
+            const bounds = kml.getBounds();
+            if (bounds?.isValid()) map.fitBounds(bounds);
+          } catch (e) {}
+          hideLoader();
+        }, 700);
+      })
+      .catch(err => {
+        console.error("❌ Failed to load KML:", err);
+        hideLoader();
+        alert("⚠️ Could not load KML. Check console for details.");
+      });
+  </script>
+</body>
+</html>
