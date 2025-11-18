@@ -175,23 +175,17 @@ def clean_polygon_gdf(gdf: gpd.GeoDataFrame | None) -> gpd.GeoDataFrame | None:
     gdf = gdf[gdf.geometry.geom_type.isin(["Polygon", "MultiPolygon"])]
     return gdf
 
+def utm_crs_for_lonlat(lon, lat):
+
 
 def compute_overlay_area_by_grid(cells_ll, overlay_gdf):
-    """
-    Returns:
-      df_overlay: pandas.DataFrame with columns grid_id, intersection_area_ha
-      overlay_area_ha: TRUE overlay area (ha)
-      total_grid_area_ha: sum of all intersections (ha)
-    """
+    """Return df_overlay, overlay_area_ha, total_grid_area_ha"""
     import pandas as pd
     from shapely.ops import unary_union
-
     if overlay_gdf is None or overlay_gdf.empty:
         return pd.DataFrame([], columns=["grid_id","intersection_area_ha"]), 0.0, 0.0
 
     overlay_union = unary_union(overlay_gdf.geometry)
-
-    # true overlay area (in UTM) — use centroid of overlay for UTM zone
     centroid = overlay_union.centroid
     utm_overlay = utm_crs_for_lonlat(centroid.x, centroid.y)
     overlay_area_ha = (
@@ -200,33 +194,21 @@ def compute_overlay_area_by_grid(cells_ll, overlay_gdf):
     )
 
     rows = []
-
     for i, cell in enumerate(cells_ll, start=1):
         inter = cell.intersection(overlay_union)
         if inter.is_empty:
             continue
-
-        # use UTM of the cell centroid for accurate area
         c_centroid = cell.centroid
         utm = utm_crs_for_lonlat(c_centroid.x, c_centroid.y)
-
         inter_area_ha = (
             gpd.GeoSeries([inter], crs="EPSG:4326")
             .to_crs(utm).area.iloc[0] / 10000.0
         )
-
-        rows.append({
-            "grid_id": int(i),
-            "intersection_area_ha": round(inter_area_ha, 4),
-        })
-
+        rows.append({"grid_id": int(i), "intersection_area_ha": round(inter_area_ha, 4)})
     df = pd.DataFrame(rows)
     total_grid_area_ha = df["intersection_area_ha"].sum() if not df.empty else 0.0
-
     return df, overlay_area_ha, total_grid_area_ha
 
-
-def utm_crs_for_lonlat(lon, lat):
     zone = int((lon + 180) / 6) + 1
     epsg = 32600 + zone if lat >= 0 else 32700 + zone
     return CRS.from_epsg(epsg)
@@ -565,51 +547,123 @@ def build_pdf_report_standard(
 
 
     # -------------------------------
-    # Page 3 — Grid Area Inside Overlay Boundary
+    # Invasive Grid Map Box (same size as Page 1 map) — "Invasive Grid Fall"
+    # Place below GPS table if space, otherwise create new page.
     # -------------------------------
     if overlay_gdf is not None and not overlay_gdf.empty:
         try:
-            df_overlay, overlay_area_ha, total_grid_area_ha = compute_overlay_area_by_grid(
-                cells_ll, overlay_gdf
-            )
-            # Add a new page for the overlay-grid accounting
-            pdf.add_page()
-            pdf.set_font("Helvetica", "B", 14)
-            pdf.cell(0, 10, "Grid Area Inside Overlay Boundary", ln=1, align="C")
-            pdf.ln(4)
+            # compute overlay accounting df
+            df_overlay, overlay_area_ha, total_grid_area_ha = compute_overlay_area_by_grid(cells_ll, overlay_gdf)
 
-            # Table header
+            # Prepare clipped grid geometries (cell ∩ overlay)
+            from shapely.ops import unary_union
+            overlay_union = unary_union(overlay_gdf.geometry)
+            clipped_rows = []
+            for i, cell in enumerate(cells_ll, start=1):
+                inter = cell.intersection(overlay_union)
+                if inter.is_empty:
+                    continue
+                clipped_rows.append({"grid_id": i, "geometry": inter})
+
+            if clipped_rows:
+                clipped_gdf = gpd.GeoDataFrame(clipped_rows, geometry=[r['geometry'] for r in clipped_rows], crs="EPSG:4326")
+                # compute label points using representative_point
+                clipped_gdf['label_pt'] = clipped_gdf.geometry.representative_point()
+
+                # Plot map (same visual layout as Page 1)
+                tmp_dir = tempfile.gettempdir()
+                invasive_map_img = os.path.join(tmp_dir, "map_invasive.png")
+                fig, ax = plt.subplots(figsize=(7, 5.8))
+                # reproject to web mercator for basemap plotting
+                clipped_3857 = clipped_gdf.to_crs(3857)
+                overlay_3857 = overlay_gdf.to_crs(3857)
+                # Plot clipped grid fill lightly and boundary
+                clipped_3857.plot(ax=ax, edgecolor='red', facecolor='none', linewidth=1)
+                # Plot overlay boundary on top
+                overlay_3857.boundary.plot(ax=ax, color="#FFD700", linewidth=3)
+                # Add basemap (Esri World Imagery)
+                ctx.add_basemap(ax, crs=3857, source=ctx.providers.Esri.WorldImagery, attribution=False)
+                ax.axis('off')
+                # Add labels at representative points (project to 3857)
+                for idx, row in clipped_3857.iterrows():
+                    try:
+                        pt = row['geometry'].representative_point()
+                        # representative_point is in 3857 already for clipped_3857
+                        ax.text(pt.x, pt.y, str(int(clipped_gdf.iloc[idx]['grid_id'])), fontsize=8, ha='center', va='center')
+                    except Exception:
+                        pass
+                plt.tight_layout(pad=0.1)
+                fig.savefig(invasive_map_img, dpi=250, bbox_inches='tight')
+                plt.close(fig)
+
+                # Decide whether to place on same page
+                y_now = pdf.get_y()
+                page_bottom_limit = 297 - 15  # A4 height minus bottom margin in mm
+                # If placing map would overflow, create new page
+                if y_now + MAP_H + 20 > page_bottom_limit:
+                    pdf.add_page()
+                # place title for map
+                pdf.set_font("Helvetica", "B", 12)
+                pdf.cell(0, 8, "Invasive Grid Fall", ln=1, align="C")
+                pdf.ln(2)
+                # place image at same coords as page 1 map (MAP_X, MAP_Y, MAP_W, MAP_H)
+                pdf.image(invasive_map_img, x=MAP_X, y=pdf.get_y(), w=MAP_W, h=MAP_H)
+                # move cursor below the image
+                pdf.set_y(pdf.get_y() + MAP_H + 4)
+            else:
+                # No intersecting clipped grids — just note it
+                pdf.set_font("Helvetica", "I", 10)
+                pdf.cell(0, 8, "No grid cells intersect the overlay — map not generated.", ln=1)
+        except Exception as _e:
+            pdf.set_font("Helvetica", "I", 10)
+            pdf.cell(0, 8, f"Invasive map generation failed: {_e}", ln=1)
+
+    # -------------------------------
+    # Now add the second table (Grid ID | Area inside overlay) below the map (new page if needed)
+    # -------------------------------
+    if overlay_gdf is not None and not overlay_gdf.empty:
+        try:
+            # Ensure df_overlay exists
+            if 'df_overlay' not in locals():
+                df_overlay, overlay_area_ha, total_grid_area_ha = compute_overlay_area_by_grid(cells_ll, overlay_gdf)
+
+            # If table won't fit on remaining space, start a new page
+            rows_needed = len(df_overlay) if df_overlay is not None else 0
+            est_height = rows_needed * 8 + 40  # rough estimate in mm (8mm per row)
+            if pdf.get_y() + est_height > page_bottom_limit:
+                pdf.add_page()
+
+            pdf.set_font("Helvetica", "B", 12)
+            pdf.cell(0, 10, "Grid Area Inside Overlay Boundary (Detail)", ln=1, align="C")
+            pdf.ln(2)
             pdf.set_font("Helvetica", "B", 11)
             pdf.cell(30, 8, "Grid ID", 1, align="C")
             pdf.cell(80, 8, "Area Inside Overlay (Ha)", 1, align="C")
             pdf.ln(8)
-
-            # Table rows
             pdf.set_font("Helvetica", "", 11)
+
             if df_overlay is not None and not df_overlay.empty:
                 for idx, row in df_overlay.iterrows():
                     pdf.cell(30, 8, str(int(row["grid_id"])), 1, align="C")
                     pdf.cell(80, 8, f"{row['intersection_area_ha']:.4f}", 1, align="R")
                     pdf.ln(8)
+                    if pdf.get_y() > 240:
+                        pdf.add_page()
+                        pdf.set_font("Helvetica", "B", 11)
+                        pdf.cell(30, 8, "Grid ID", 1, align="C")
+                        pdf.cell(80, 8, "Area Inside Overlay (Ha)", 1, align="C")
+                        pdf.ln(8)
+                        pdf.set_font("Helvetica", "", 11)
             else:
-                pdf.cell(0, 8, "No intersecting grid cells.", 0, 1, "L")
+                pdf.cell(0, 8, "No intersecting grid cells.", ln=1)
 
-            # Total at bottom (rounded to 0 decimals)
+            # Total area left-aligned at bottom
             pdf.ln(4)
             pdf.set_font("Helvetica", "B", 12)
-            pdf.cell(
-                0, 10,
-                f"TOTAL AREA INSIDE OVERLAY: {total_grid_area_ha:.0f} Ha",
-                ln=1,
-                align="R"
-            )
+            pdf.cell(0, 10, f"TOTAL AREA INSIDE OVERLAY: {total_grid_area_ha:.0f} Ha", ln=1, align="L")
         except Exception as _e:
-            # If anything goes wrong with the overlay accounting, write a note and continue
-            pdf.add_page()
-            pdf.set_font("Helvetica", "B", 12)
-            pdf.cell(0, 10, "Grid Area Inside Overlay Boundary", ln=1, align="C")
-            pdf.set_font("Helvetica", "", 10)
-            pdf.multi_cell(0, 6, f"Failed to compute overlay accounting: {_e}")
+            pdf.set_font("Helvetica", "I", 10)
+            pdf.cell(0, 8, f"Overlay detail table generation failed: {_e}", ln=1)
 
 
     # -------------------------------
