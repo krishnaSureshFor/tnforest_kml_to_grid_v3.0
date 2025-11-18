@@ -595,7 +595,7 @@ def build_pdf_report_standard(
                     try:
                         pt = crow.geometry.representative_point()
                         gid = int(crow['grid_id']) if 'grid_id' in crow.index else ''
-                        ax.text(pt.x, pt.y, str(gid), fontsize=8, ha='center', va='center')
+                        ax.text(pt.x, pt.y, str(gid), color='#03fcfc', fontsize=8, ha='center', va='center')
                     except Exception:
                         pass
                 plt.tight_layout(pad=0.1)
@@ -649,10 +649,7 @@ def build_pdf_report_standard(
             pdf.set_font("Helvetica", "B", 11)
             # Header: Grid ID (tall) and Wrapped Area header
             pdf.cell(30, 8, "Grid ID", 1, align="C")
-            pdf.cell(80, 4, "Area Inside", 1, align="C")
-            pdf.ln(4)
-            pdf.cell(30, 4, "", 0)
-            pdf.cell(80, 4, "Overlay (Ha)", 1, align="C")
+            pdf.cell(80,8,"Area Inside Overlay (Ha)",1,align="C")
             pdf.ln(8)
 
             pdf.set_font("Helvetica", "", 11)
@@ -666,11 +663,8 @@ def build_pdf_report_standard(
                         pdf.add_page()
                         pdf.set_font("Helvetica", "B", 11)
                         pdf.cell(30, 8, "Grid ID", 1, align="C")
-                        pdf.cell(80, 4, "Area Inside", 1, align="C")
-                        pdf.ln(4)
-                        pdf.cell(30, 4, "", 0)
-                        pdf.cell(80, 4, "Overlay (Ha)", 1, align="C")
-                        pdf.ln(8)
+                        pdf.cell(80,8,"Area Inside Overlay (Ha)",1,align="C")
+            pdf.ln(8)
                         pdf.set_font("Helvetica", "", 11)
             else:
                 pdf.cell(0, 8, "No intersecting grid cells.", ln=1)
