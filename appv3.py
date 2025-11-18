@@ -664,7 +664,7 @@ def build_pdf_report_standard(
                         pdf.set_font("Helvetica", "B", 11)
                         pdf.cell(30, 8, "Grid ID", 1, align="C")
                         pdf.cell(80,8,"Area Inside Overlay (Ha)",1,align="C")
-            pdf.ln(8)
+                        pdf.ln(8)
                         pdf.set_font("Helvetica", "", 11)
             else:
                 pdf.cell(0, 8, "No intersecting grid cells.", ln=1)
