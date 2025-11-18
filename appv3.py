@@ -175,8 +175,11 @@ def clean_polygon_gdf(gdf: gpd.GeoDataFrame | None) -> gpd.GeoDataFrame | None:
     gdf = gdf[gdf.geometry.geom_type.isin(["Polygon", "MultiPolygon"])]
     return gdf
 
-def utm_crs_for_lonlat(lon, lat):
 
+def utm_crs_for_lonlat(lon, lat):
+    zone = int((lon + 180) / 6) + 1
+    epsg = 32600 + zone if lat >= 0 else 32700 + zone
+    return CRS.from_epsg(epsg)
 
 def compute_overlay_area_by_grid(cells_ll, overlay_gdf):
     """Return df_overlay, overlay_area_ha, total_grid_area_ha"""
@@ -208,10 +211,6 @@ def compute_overlay_area_by_grid(cells_ll, overlay_gdf):
     df = pd.DataFrame(rows)
     total_grid_area_ha = df["intersection_area_ha"].sum() if not df.empty else 0.0
     return df, overlay_area_ha, total_grid_area_ha
-
-    zone = int((lon + 180) / 6) + 1
-    epsg = 32600 + zone if lat >= 0 else 32700 + zone
-    return CRS.from_epsg(epsg)
 
 def make_grid_exact_clipped(polygons_ll, cell_size_m=100):
     """Generate clipped grid cells (ensures valid non-empty geometries in EPSG:4326)."""
@@ -563,18 +562,12 @@ def build_pdf_report_standard(
                 inter = cell.intersection(overlay_union)
                 if inter.is_empty:
                     continue
-                clipped_rows.append({"grid_id": int(i), "geometry": inter})
+                clipped_rows.append({"grid_id": i, "geometry": inter})
 
             if clipped_rows:
                 clipped_gdf = gpd.GeoDataFrame(clipped_rows, geometry=[r['geometry'] for r in clipped_rows], crs="EPSG:4326")
                 # compute label points using representative_point
                 clipped_gdf['label_pt'] = clipped_gdf.geometry.representative_point()
-
-                # Debug info: write counts to PDF for troubleshooting
-                pdf.set_font("Helvetica", "I", 9)
-                pdf.cell(0, 6, f"Debug: clipped_cells={len(clipped_gdf)}; df_overlay_rows={len(df_overlay) if 'df_overlay' in locals() else 0}", ln=1)
-                pdf.set_font("Helvetica", "", 11)
-
 
                 # Plot map (same visual layout as Page 1)
                 tmp_dir = tempfile.gettempdir()
@@ -591,13 +584,13 @@ def build_pdf_report_standard(
                 ctx.add_basemap(ax, crs=3857, source=ctx.providers.Esri.WorldImagery, attribution=False)
                 ax.axis('off')
                 # Add labels at representative points (project to 3857)
-                for _idx, crow in clipped_3857.iterrows():
-                        try:
-                            pt = crow.geometry.representative_point()
-                            gid = int(crow['grid_id']) if 'grid_id' in crow.index else ''
-                            ax.text(pt.x, pt.y, str(gid), fontsize=8, ha='center', va='center')
-                        except Exception:
-                            pass
+                for idx, row in clipped_3857.iterrows():
+                    try:
+                        pt = row['geometry'].representative_point()
+                        # representative_point is in 3857 already for clipped_3857
+                        ax.text(pt.x, pt.y, str(int(clipped_gdf.iloc[idx]['grid_id'])), fontsize=8, ha='center', va='center')
+                    except Exception:
+                        pass
                 plt.tight_layout(pad=0.1)
                 fig.savefig(invasive_map_img, dpi=250, bbox_inches='tight')
                 plt.close(fig)
