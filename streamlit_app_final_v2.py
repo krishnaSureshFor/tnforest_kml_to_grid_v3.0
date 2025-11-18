@@ -563,12 +563,18 @@ def build_pdf_report_standard(
                 inter = cell.intersection(overlay_union)
                 if inter.is_empty:
                     continue
-                clipped_rows.append({"grid_id": i, "geometry": inter})
+                clipped_rows.append({"grid_id": int(i), "geometry": inter})
 
             if clipped_rows:
                 clipped_gdf = gpd.GeoDataFrame(clipped_rows, geometry=[r['geometry'] for r in clipped_rows], crs="EPSG:4326")
                 # compute label points using representative_point
                 clipped_gdf['label_pt'] = clipped_gdf.geometry.representative_point()
+
+                # Debug info: write counts to PDF for troubleshooting
+                pdf.set_font("Helvetica", "I", 9)
+                pdf.cell(0, 6, f"Debug: clipped_cells={len(clipped_gdf)}; df_overlay_rows={len(df_overlay) if 'df_overlay' in locals() else 0}", ln=1)
+                pdf.set_font("Helvetica", "", 11)
+
 
                 # Plot map (same visual layout as Page 1)
                 tmp_dir = tempfile.gettempdir()
@@ -585,13 +591,13 @@ def build_pdf_report_standard(
                 ctx.add_basemap(ax, crs=3857, source=ctx.providers.Esri.WorldImagery, attribution=False)
                 ax.axis('off')
                 # Add labels at representative points (project to 3857)
-                for idx, row in clipped_3857.iterrows():
-                    try:
-                        pt = row['geometry'].representative_point()
-                        # representative_point is in 3857 already for clipped_3857
-                        ax.text(pt.x, pt.y, str(int(clipped_gdf.iloc[idx]['grid_id'])), fontsize=8, ha='center', va='center')
-                    except Exception:
-                        pass
+                for _idx, crow in clipped_3857.iterrows():
+                        try:
+                            pt = crow.geometry.representative_point()
+                            gid = int(crow['grid_id']) if 'grid_id' in crow.index else ''
+                            ax.text(pt.x, pt.y, str(gid), fontsize=8, ha='center', va='center')
+                        except Exception:
+                            pass
                 plt.tight_layout(pad=0.1)
                 fig.savefig(invasive_map_img, dpi=250, bbox_inches='tight')
                 plt.close(fig)
