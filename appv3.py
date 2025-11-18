@@ -423,7 +423,7 @@ def build_pdf_report_standard(
                 repo.update_file(existing.path, f"Update KML {kml_id}", content, existing.sha, branch="main")
             except Exception:
                 repo.create_file(path_in_repo, f"Add KML {kml_id}", content, branch="main")
-            return f"https://krishnaSureshFor.github.io/tnforest_kml_to_grid_v2.0/public_kml/{kml_id}.kml"
+            return f"https://krishnaSureshFor.github.io/tnforest_kml_to_grid_v3.0/public_kml/{kml_id}.kml"
         except Exception:
             return None
 
