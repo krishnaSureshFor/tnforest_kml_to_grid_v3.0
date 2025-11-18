@@ -387,11 +387,12 @@ def generate_labeled_kml(cells_ll, merged_ll, user_inputs, overlay_gdf=None):
 # ================================================================
 # PDF REPORT FUNCTION (stable layout + correct footer)
 # ================================================================
+
 def build_pdf_report_standard(
     cells_ll, merged_ll, user_inputs, cell_size,
     overlay_gdf, title_text, density, area_invasive, labeled_kml=None
 ):
-    import geopandas as gpd, matplotlib.pyplot as plt, contextily as ctx, tempfile, os
+    import geopandas as gpd, matplotlib.pyplot as plt, contextily as ctx, tempfile, os, math
     from fpdf import FPDF
     import qrcode
     import uuid
@@ -409,9 +410,7 @@ def build_pdf_report_standard(
     def push_kml_to_repo(kml_path, kml_id, repo_name="krishnaSureshFor/tnforest_kml_to_grid_v2.0"):
         """Push generated KML to GitHub repo's public_kml folder."""
         token = os.getenv("GITHUB_TOKEN")  # set this in Streamlit Cloud → Settings → Secrets
-        print("🔍 GITHUB_TOKEN found:", bool(token))
         if not token:
-            print("⚠️ Missing GITHUB_TOKEN — cannot push to repo")
             return None
         try:
             g = Github(token)
@@ -419,22 +418,13 @@ def build_pdf_report_standard(
             with open(kml_path, "r", encoding="utf-8") as f:
                 content = f.read()
             path_in_repo = f"public_kml/{kml_id}.kml"
-
-            # If file already exists, update instead of recreate
             try:
                 existing = repo.get_contents(path_in_repo, ref="main")
-                repo.update_file(
-                    existing.path, f"Update KML {kml_id}", content,
-                    existing.sha, branch="main"
-                )
+                repo.update_file(existing.path, f"Update KML {kml_id}", content, existing.sha, branch="main")
             except Exception:
                 repo.create_file(path_in_repo, f"Add KML {kml_id}", content, branch="main")
-
-            print(f"✅ Uploaded {path_in_repo} to GitHub.")
             return f"https://krishnaSureshFor.github.io/tnforest_kml_to_grid_v2.0/public_kml/{kml_id}.kml"
-
-        except Exception as e:
-            print("GitHub push failed:", e)
+        except Exception:
             return None
 
     class PDF(FPDF):
@@ -452,12 +442,16 @@ def build_pdf_report_standard(
     # -------------------------------
     pdf.add_page()
     if os.path.exists(EMBLEM_PATH):
-        pdf.image(EMBLEM_PATH, x=93, y=8, w=25)
+        try:
+            pdf.image(EMBLEM_PATH, x=93, y=8, w=25)
+        except Exception:
+            pass
     pdf.set_y(35)
     pdf.set_font("Helvetica", "B", 16)
     pdf.cell(0, 10, "FOREST DEPARTMENT", ln=1, align="C")
     pdf.set_font("Helvetica", "B", 13)
     pdf.cell(0, 8, title_text, ln=1, align="C")
+
 
     # Map image
     tmp_dir = tempfile.gettempdir()
@@ -469,12 +463,22 @@ def build_pdf_report_standard(
     grid_gdf.boundary.plot(ax=ax, color="red", linewidth=1)
     if overlay_gdf is not None and not overlay_gdf.empty:
         overlay_gdf.to_crs(3857).boundary.plot(ax=ax, color="#FFD700", linewidth=3)
-    ctx.add_basemap(ax, crs=3857, source=ctx.providers.Esri.WorldImagery, attribution=False)
+    try:
+        ctx.add_basemap(ax, crs=3857, source=ctx.providers.Esri.WorldImagery, attribution=False)
+    except Exception:
+        pass
     ax.axis("off")
     plt.tight_layout(pad=0.1)
-    fig.savefig(map_img, dpi=250, bbox_inches="tight")
+    try:
+        fig.savefig(map_img, dpi=250, bbox_inches="tight")
+    except Exception:
+        pass
     plt.close(fig)
-    pdf.image(map_img, x=MAP_X, y=MAP_Y, w=MAP_W, h=MAP_H)
+    try:
+        pdf.image(map_img, x=MAP_X, y=MAP_Y, w=MAP_W, h=MAP_H)
+    except Exception:
+        pdf.set_font("Helvetica", "I", 10)
+        pdf.cell(0, 8, "Map image failed to render.", ln=1, align="C")
 
     # Legend box
     legend_y = MAP_Y + MAP_H + LEGEND_GAP
@@ -530,9 +534,9 @@ def build_pdf_report_standard(
                 for part in geom.geoms:
                     coords.extend(list(part.exterior.coords))
             for lon, lat, *_ in coords:
-                pdf.cell(25, 7, str(row), 1)
-                pdf.cell(75, 7, f"{lat:.6f}", 1, align="R")
-                pdf.cell(75, 7, f"{lon:.6f}", 1, align="R")
+                pdf.cell(25, 7, str(row), 1, align="C")
+                pdf.cell(75, 7, f"{lat:.6f}", 1, align="C")
+                pdf.cell(75, 7, f"{lon:.6f}", 1, align="C")
                 pdf.ln(7)
                 row += 1
                 if pdf.get_y() > 240:
@@ -562,7 +566,7 @@ def build_pdf_report_standard(
                 inter = cell.intersection(overlay_union)
                 if inter.is_empty:
                     continue
-                clipped_rows.append({"grid_id": i, "geometry": inter})
+                clipped_rows.append({"grid_id": int(i), "geometry": inter})
 
             if clipped_rows:
                 clipped_gdf = gpd.GeoDataFrame(clipped_rows, geometry=[r['geometry'] for r in clipped_rows], crs="EPSG:4326")
@@ -581,14 +585,17 @@ def build_pdf_report_standard(
                 # Plot overlay boundary on top
                 overlay_3857.boundary.plot(ax=ax, color="#FFD700", linewidth=3)
                 # Add basemap (Esri World Imagery)
-                ctx.add_basemap(ax, crs=3857, source=ctx.providers.Esri.WorldImagery, attribution=False)
+                try:
+                    ctx.add_basemap(ax, crs=3857, source=ctx.providers.Esri.WorldImagery, attribution=False)
+                except Exception:
+                    pass
                 ax.axis('off')
                 # Add labels at representative points (project to 3857)
-                for idx, row in clipped_3857.iterrows():
+                for _idx, crow in clipped_3857.iterrows():
                     try:
-                        pt = row['geometry'].representative_point()
-                        # representative_point is in 3857 already for clipped_3857
-                        ax.text(pt.x, pt.y, str(int(clipped_gdf.iloc[idx]['grid_id'])), fontsize=8, ha='center', va='center')
+                        pt = crow.geometry.representative_point()
+                        gid = int(crow['grid_id']) if 'grid_id' in crow.index else ''
+                        ax.text(pt.x, pt.y, str(gid), fontsize=8, ha='center', va='center')
                     except Exception:
                         pass
                 plt.tight_layout(pad=0.1)
@@ -601,6 +608,10 @@ def build_pdf_report_standard(
                 # If placing map would overflow, create new page
                 if y_now + MAP_H + 20 > page_bottom_limit:
                     pdf.add_page()
+
+                # add 2-line space before title
+                pdf.ln(10)
+
                 # place title for map
                 pdf.set_font("Helvetica", "B", 12)
                 pdf.cell(0, 8, "Invasive Grid Fall", ln=1, align="C")
@@ -636,30 +647,38 @@ def build_pdf_report_standard(
             pdf.cell(0, 10, "Grid Area Inside Overlay Boundary (Detail)", ln=1, align="C")
             pdf.ln(2)
             pdf.set_font("Helvetica", "B", 11)
+            # Header: Grid ID (tall) and Wrapped Area header
             pdf.cell(30, 8, "Grid ID", 1, align="C")
-            pdf.cell(80, 8, "Area Inside Overlay (Ha)", 1, align="C")
+            pdf.cell(80, 4, "Area Inside", 1, align="C")
+            pdf.ln(4)
+            pdf.cell(30, 4, "", 0)
+            pdf.cell(80, 4, "Overlay (Ha)", 1, align="C")
             pdf.ln(8)
+
             pdf.set_font("Helvetica", "", 11)
 
             if df_overlay is not None and not df_overlay.empty:
                 for idx, row in df_overlay.iterrows():
                     pdf.cell(30, 8, str(int(row["grid_id"])), 1, align="C")
-                    pdf.cell(80, 8, f"{row['intersection_area_ha']:.4f}", 1, align="R")
+                    pdf.cell(80, 8, f"{row['intersection_area_ha']:.4f}", 1, align="C")
                     pdf.ln(8)
                     if pdf.get_y() > 240:
                         pdf.add_page()
                         pdf.set_font("Helvetica", "B", 11)
                         pdf.cell(30, 8, "Grid ID", 1, align="C")
-                        pdf.cell(80, 8, "Area Inside Overlay (Ha)", 1, align="C")
+                        pdf.cell(80, 4, "Area Inside", 1, align="C")
+                        pdf.ln(4)
+                        pdf.cell(30, 4, "", 0)
+                        pdf.cell(80, 4, "Overlay (Ha)", 1, align="C")
                         pdf.ln(8)
                         pdf.set_font("Helvetica", "", 11)
             else:
                 pdf.cell(0, 8, "No intersecting grid cells.", ln=1)
 
-            # Total area left-aligned at bottom
+            # Total area left-aligned at bottom (rounded UP to next whole Ha)
             pdf.ln(4)
             pdf.set_font("Helvetica", "B", 12)
-            pdf.cell(0, 10, f"TOTAL AREA INSIDE OVERLAY: {total_grid_area_ha:.0f} Ha", ln=1, align="L")
+            pdf.cell(0, 10, f"TOTAL AREA INSIDE OVERLAY: {math.ceil(total_grid_area_ha)} Ha", ln=1, align="L")
         except Exception as _e:
             pdf.set_font("Helvetica", "I", 10)
             pdf.cell(0, 8, f"Overlay detail table generation failed: {_e}", ln=1)
