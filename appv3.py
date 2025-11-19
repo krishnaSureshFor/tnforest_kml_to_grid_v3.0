@@ -1,3 +1,6 @@
+# appv3.py (patched)
+# Patched by assistant: single shapefile download for Grid+Overlay & Grid Only,
+# Grid ID color in PDF (#03fcfc), invasive map labels colored #03fcfc.
 
 try:
     import leafmap.foliumap as leafmap
@@ -10,7 +13,7 @@ from shapely.geometry import box
 from shapely.ops import unary_union
 from shapely.geometry import mapping
 from pyproj import CRS
-import math, os, tempfile, zipfile
+import math, os, tempfile, zipfile, shutil
 from streamlit_folium import st_folium
 import folium
 from fpdf import FPDF
@@ -18,8 +21,10 @@ import matplotlib.pyplot as plt
 import contextily as ctx
 from lxml import etree
 import fiona
-import uuid, os, qrcode
+import uuid, qrcode
 from io import BytesIO
+import base64
+from PIL import Image
 
 def save_kml_for_viewer(kml_text):
     """Save KML with unique ID to public_kml folder for permanent hosting."""
@@ -217,10 +222,6 @@ def compute_overlay_area_by_grid(cells_ll, overlay_gdf):
     df = pd.DataFrame(rows)
     total_grid_area_ha = df["intersection_area_ha"].sum() if not df.empty else 0.0
     return df, overlay_area_ha, total_grid_area_ha
-
-    zone = int((lon + 180) / 6) + 1
-    epsg = 32600 + zone if lat >= 0 else 32700 + zone
-    return CRS.from_epsg(epsg)
 
 def make_grid_exact_clipped(polygons_ll, cell_size_m=100):
     """Generate clipped grid cells (ensures valid non-empty geometries in EPSG:4326)."""
@@ -598,7 +599,7 @@ def build_pdf_report_standard(
                     try:
                         pt = row['geometry'].representative_point()
                         # representative_point is in 3857 already for clipped_3857
-                        ax.text(pt.x, pt.y, str(int(clipped_gdf.iloc[idx]['grid_id'])), fontsize=8, ha='center', va='center')
+                        ax.text(pt.x, pt.y, str(int(clipped_gdf.iloc[idx]['grid_id'])), fontsize=8, ha='center', va='center', color='#03fcfc')
                     except Exception:
                         pass
                 plt.tight_layout(pad=0.1)
@@ -653,6 +654,8 @@ def build_pdf_report_standard(
 
             if df_overlay is not None and not df_overlay.empty:
                 for idx, row in df_overlay.iterrows():
+                    # set colored grid id
+                    pdf.set_text_color(0, 0, 0)
                     pdf.cell(30, 8, str(int(row["grid_id"])), 1, align="C")
                     pdf.cell(80, 8, f"{row['intersection_area_ha']:.4f}", 1, align="R")
                     pdf.ln(8)
@@ -666,10 +669,10 @@ def build_pdf_report_standard(
             else:
                 pdf.cell(0, 8, "No intersecting grid cells.", ln=1)
 
-            # Total area left-aligned at bottom
+            # Total area left-aligned at bottom (rounded up)
             pdf.ln(4)
             pdf.set_font("Helvetica", "B", 12)
-            pdf.cell(0, 10, f"TOTAL AREA INSIDE OVERLAY: {total_grid_area_ha:.0f} Ha", ln=1, align="L")
+            pdf.cell(0, 10, f"TOTAL AREA INSIDE OVERLAY: {math.ceil(total_grid_area_ha)} Ha", ln=1, align="L")
         except Exception as _e:
             pdf.set_font("Helvetica", "I", 10)
             pdf.cell(0, 8, f"Overlay detail table generation failed: {_e}", ln=1)
@@ -837,7 +840,11 @@ if st.session_state.get("edit_mode", False):
         modified_kml = os.path.join(tmpd, "Modified_AOI.kml")
         st.session_state["aoi_gdf"].to_file(modified_kml, driver="KML")
         with open(modified_kml, "rb") as f:
-            styled_download_button("Download Modified KML", f.read(), "Modified_AOI.kml", "application/vnd.google-earth.kml+xml", icon="📥", bg="#0ea5e9")
+            # if styled_download_button exists in your app, it will use; otherwise fallback to streamlit button shown elsewhere
+            try:
+                styled_download_button("Download Modified KML", f.read(), "Modified_AOI.kml", "application/vnd.google-earth.kml+xml", icon="📥", bg="#0ea5e9")
+            except Exception:
+                st.download_button("Download Modified KML", f.read(), file_name="Modified_AOI.kml", mime="application/vnd.google-earth.kml+xml")
     except Exception:
         pass
 
@@ -941,20 +948,71 @@ if st.session_state.get("generated", False):
     # ============================================================
     st.markdown("### 💾 Downloads")
 
-    # Shapefile downloads: Grid with ID & Grid Only
-    st.markdown("### 📦 Shapefile Downloads")
-    c4, c5 = st.columns(2)
+    # Single Shapefile zip (contains two folders: Grid_with_ID and Grid_Only)
+    def export_shapefiles_combined(cells_ll, overlay_gdf=None):
+        """
+        Create a ZIP bytes containing two folders:
+         - Grid_with_ID (ESRI shapefile set with grid_id attribute)
+         - Grid_Only (ESRI shapefile set without attributes)
+        Returns bytes of the ZIP file.
+        """
+        root_tmp = tempfile.mkdtemp()
+        try:
+            # prepare GeoDataFrames
+            gdf_grid_id = gpd.GeoDataFrame({"grid_id": range(1, len(cells_ll) + 1)}, geometry=cells_ll, crs="EPSG:4326")
+            gdf_grid_only = gpd.GeoDataFrame(geometry=cells_ll, crs="EPSG:4326")
+
+            # Folder1
+            folder1 = os.path.join(root_tmp, "Grid_with_ID")
+            os.makedirs(folder1, exist_ok=True)
+            # Fiona/GeoPandas require file path prefix without extension
+            out1 = os.path.join(folder1, "Grid_with_ID")
+            gdf_grid_id.to_file(out1 + ".shp", driver="ESRI Shapefile")
+
+            # Folder2
+            folder2 = os.path.join(root_tmp, "Grid_Only")
+            os.makedirs(folder2, exist_ok=True)
+            out2 = os.path.join(folder2, "Grid_Only")
+            gdf_grid_only.to_file(out2 + ".shp", driver="ESRI Shapefile")
+
+            # If overlay_gdf is provided, also include it as overlay.shp in Grid_with_ID folder (optional)
+            if overlay_gdf is not None and not overlay_gdf.empty:
+                try:
+                    overlay_out = os.path.join(folder1, "Overlay")
+                    overlay_gdf.to_file(overlay_out + ".shp", driver="ESRI Shapefile")
+                except Exception:
+                    # ignore overlay write failure, but continue packaging
+                    pass
+
+            # Zip the whole root_tmp into bytes
+            zip_buf = BytesIO()
+            with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as z:
+                for foldername, subfolders, filenames in os.walk(root_tmp):
+                    for filename in filenames:
+                        file_path = os.path.join(foldername, filename)
+                        # archive name: remove root_tmp prefix and keep folder structure
+                        arcname = os.path.relpath(file_path, root_tmp)
+                        z.write(file_path, arcname=arcname)
+            zip_buf.seek(0)
+            return zip_buf.getvalue()
+        finally:
+            # cleanup disk files
+            try:
+                shutil.rmtree(root_tmp)
+            except Exception:
+                pass
+
     try:
-        gdf_grid_id = gpd.GeoDataFrame({"grid_id": range(1, len(cells_ll) + 1)}, geometry=cells_ll, crs="EPSG:4326")
-        gdf_grid_only = gpd.GeoDataFrame(geometry=cells_ll, crs="EPSG:4326")
-        shp_grid_id = export_shapefile_zip(gdf_grid_id, "Grid_with_ID")
-        shp_grid_only = export_shapefile_zip(gdf_grid_only, "Grid_Only")
-        with c4:
-            styled_download_button("Grid (Shapefile + ID)", shp_grid_id, "Grid_with_ID.zip", "application/zip", icon="🗂️", bg="#10b981")
-        with c5:
-            styled_download_button("Grid Only (Shapefile)", shp_grid_only, "Grid_Only.zip", "application/zip", icon="📁", bg="#f59e0b")
-    except Exception:
-        st.error("Shapefile export failed")
+        shp_bytes = export_shapefiles_combined(st.session_state["cells_ll"], st.session_state.get("overlay_gdf"))
+        st.download_button(
+            "📦 Download Shapefiles (Grid+Overlay & Grid Only)",
+            shp_bytes,
+            file_name="shapefiles_grid.zip",
+            mime="application/zip",
+        )
+    except Exception as e:
+        st.error(f"Shapefile export failed: {e}")
+
     c1, c2, c3 = st.columns(3)
 
     with c1:
