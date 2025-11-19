@@ -111,53 +111,10 @@ box-shadow:0 4px 10px rgba(0,0,0,0.25); letter-spacing:1px;'>
 st.sidebar.header("⚙️ Tool Settings")
 
 with st.sidebar.expander("📂 Upload Files (AOI / Overlay)", expanded=True):
-    pass
-    
+    uploaded_aoi = st.file_uploader("Upload KML/KMZ", type=["kml", "kmz"], key="aoi_file")
+    overlay_file = st.file_uploader("Optional Invasive KML/KMZ", type=["kml", "kmz"], key="overlay_file")
 
 
-    st.write("Edit the AOI boundary. You can draw on the map (if available) or upload an edited KML. After editing, click Re-upload Edited AOI.")
-
-    if 'LEAFMAP_AVAILABLE' in globals() and LEAFMAP_AVAILABLE:
-        try:
-            m = leafmap.Map(center=[aoi_gdf.geometry.centroid.y.mean(), aoi_gdf.geometry.centroid.x.mean()], zoom=13)
-            m.add_gdf(aoi_gdf, layer_name="AOI")
-            m.add_draw_control(draw_options={"polyline": False, "polygon": True, "circle": False, "rectangle": True, "marker": False}, edit_options={"poly": {"allowIntersection": False}})
-            m.to_streamlit(height=600)
-        except Exception:
-            st.info("Live editing map failed — please upload edited KML instead.")
-
-    edited_file = st.file_uploader("Upload Edited AOI KML/KMZ (or leave empty if you edited on map)", type=["kml", "kmz"])
-    if edited_file is not None:
-        try:
-            edited_gdf = gpd.read_file(edited_file)
-            st.session_state["aoi_gdf_edited_temp"] = edited_gdf
-            st.success("Edited AOI loaded (temporary). Click 'Re-upload Edited AOI' to apply it.")
-        except Exception as e:
-            st.error(f"Failed to read edited file: {e}")
-
-    if st.button("Re-upload Edited AOI"):
-        if st.session_state.get("aoi_gdf_edited_temp") is not None:
-            st.session_state["aoi_gdf"] = st.session_state.pop("aoi_gdf_edited_temp")
-            st.session_state["generated"] = False
-            st.session_state["edit_mode"] = False
-            st.experimental_rerun()
-        else:
-            st.warning("No edited AOI available. Upload or edit on the map first.")
-
-    # Download modified AOI
-    try:
-        tmpd = tempfile.mkdtemp()
-        modified_kml = os.path.join(tmpd, "Modified_AOI.kml")
-        st.session_state["aoi_gdf"].to_file(modified_kml, driver="KML")
-        with open(modified_kml, "rb") as f:
-            styled_download_button("Download Modified KML", f.read(), "Modified_AOI.kml", "application/vnd.google-earth.kml+xml", icon="📥", bg="#0ea5e9")
-    except Exception:
-        pass
-
-    st.stop()
-
-uploaded_aoi = st.file_uploader("Upload KML/KMZ", type=["kml", "kmz"], key="aoi_file")
-overlay_file = st.file_uploader("Optional Invasive KML/KMZ", type=["kml", "kmz"], key="overlay_file")
 with st.sidebar.expander("🌲 KML Label Details"):
     range_name = st.text_input("Range Name", placeholder="Range Name", key="range_name")
     rf_name = st.text_input("RF Name", placeholder="RF/RL", key="rf_name")
@@ -451,45 +408,6 @@ def build_pdf_report_standard(
     from io import BytesIO
     from github import Github
     from PIL import Image
-
-def styled_download_button(label, data_bytes, file_name, mime, icon="⬇️", bg="#0284c7"):
-    try:
-        b64 = base64.b64encode(data_bytes).decode()
-    except Exception:
-        b64 = base64.b64encode(str(data_bytes).encode("utf-8")).decode()
-    html = f"""
-    <style>
-    .dlbtn {{ display:inline-block; position:relative; padding:10px 16px; border-radius:10px; color:#fff; font-weight:700;
-              text-decoration:none; transition: transform 0.18s cubic-bezier(.2,.8,.2,1), box-shadow 0.18s ease;
-              box-shadow: 0 6px 18px rgba(0,0,0,0.12); margin:6px 6px; }}
-    .dlbtn:hover {{ transform: translateY(-4px) scale(1.03); box-shadow: 0 12px 30px rgba(0,0,0,0.2); }}
-    .dlbtn .shine {{ position:absolute; top:0; left:-75%; width:50%; height:100%; background:linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.14)); transform:skewX(-20deg); transition:left 0.9s ease; }}
-    .dlbtn:hover .shine {{ left:150%; }}
-    </style>
-    <a download="{file_name}" href="data:{mime};base64,{b64}" target="_blank" style="text-decoration:none">
-      <div class="dlbtn" style="background:{bg};">
-        <span style="display:inline-block;padding-right:8px">{icon}</span>
-        <span style="vertical-align:middle">{label}</span>
-        <div class="shine"></div>
-      </div>
-    </a>
-    """
-    st.markdown(html, unsafe_allow_html=True)
-
-import zipfile
-
-def export_shapefile_zip(gdf, name="layer"):
-    tmpdir = tempfile.mkdtemp()
-    shp_prefix = os.path.join(tmpdir, name)
-    # write as ESRI Shapefile
-    gdf.to_file(shp_prefix + ".shp", driver="ESRI Shapefile")
-    zip_bytes = BytesIO()
-    with zipfile.ZipFile(zip_bytes, "w", zipfile.ZIP_DEFLATED) as z:
-        for ext in ["shp", "shx", "dbf", "prj", "cpg"]:
-            fpath = f"{shp_prefix}.{ext}"
-            if os.path.exists(fpath):
-                z.write(fpath, arcname=os.path.basename(fpath))
-    return zip_bytes.getvalue()
     import base64
 
     MAP_X, MAP_Y, MAP_W, MAP_H, LEGEND_GAP = 15, 55, 180, 145, 8
@@ -735,9 +653,7 @@ def export_shapefile_zip(gdf, name="layer"):
 
             if df_overlay is not None and not df_overlay.empty:
                 for idx, row in df_overlay.iterrows():
-                    pdf.set_text_color(3, 252, 252)
                     pdf.cell(30, 8, str(int(row["grid_id"])), 1, align="C")
-                    pdf.set_text_color(0, 0, 0)
                     pdf.cell(80, 8, f"{row['intersection_area_ha']:.4f}", 1, align="R")
                     pdf.ln(8)
                     if pdf.get_y() > 240:
@@ -879,55 +795,12 @@ if generate_click:
 # 3️⃣ Only display map + outputs once generated
 
 # --- Edit AOI Page ---
-
 if st.session_state.get("edit_mode", False):
     st.title("Edit AOI Boundary")
     aoi_gdf = st.session_state.get("aoi_gdf")
     if aoi_gdf is None:
         st.warning("No AOI loaded to edit")
         st.stop()
-
-    st.write("Edit the AOI boundary. You can draw on the map (if available) or upload an edited KML. After editing, click Re-upload Edited AOI.")
-
-    if 'LEAFMAP_AVAILABLE' in globals() and LEAFMAP_AVAILABLE:
-        try:
-            m = leafmap.Map(center=[aoi_gdf.geometry.centroid.y.mean(), aoi_gdf.geometry.centroid.x.mean()], zoom=13)
-            m.add_gdf(aoi_gdf, layer_name="AOI")
-            m.add_draw_control(draw_options={"polyline": False, "polygon": True, "circle": False, "rectangle": True, "marker": False}, edit_options={"poly": {"allowIntersection": False}})
-            m.to_streamlit(height=600)
-        except Exception:
-            st.info("Live editing map failed — please upload edited KML instead.")
-
-    edited_file = st.file_uploader("Upload Edited AOI KML/KMZ (or leave empty if you edited on map)", type=["kml", "kmz"])
-    if edited_file is not None:
-        try:
-            edited_gdf = gpd.read_file(edited_file)
-            st.session_state["aoi_gdf_edited_temp"] = edited_gdf
-            st.success("Edited AOI loaded (temporary). Click 'Re-upload Edited AOI' to apply it.")
-        except Exception as e:
-            st.error(f"Failed to read edited file: {e}")
-
-    if st.button("Re-upload Edited AOI"):
-        if st.session_state.get("aoi_gdf_edited_temp") is not None:
-            st.session_state["aoi_gdf"] = st.session_state.pop("aoi_gdf_edited_temp")
-            st.session_state["generated"] = False
-            st.session_state["edit_mode"] = False
-            st.experimental_rerun()
-        else:
-            st.warning("No edited AOI available. Upload or edit on the map first.")
-
-    # Download modified AOI
-    try:
-        tmpd = tempfile.mkdtemp()
-        modified_kml = os.path.join(tmpd, "Modified_AOI.kml")
-        st.session_state["aoi_gdf"].to_file(modified_kml, driver="KML")
-        with open(modified_kml, "rb") as f:
-            styled_download_button("Download Modified KML", f.read(), "Modified_AOI.kml", "application/vnd.google-earth.kml+xml", icon="📥", bg="#0ea5e9")
-    except Exception:
-        pass
-
-    st.stop()
-
 
     st.write("Edit the AOI boundary. You can draw or upload an edited KML. After editing, click Re-run Grid Formation.")
 
@@ -969,24 +842,6 @@ if st.session_state.get("edit_mode", False):
         pass
 
     st.stop()
-
-# --- Edit AOI workflow: Change RF KML button ---
-try:
-    if st.session_state.get("aoi_gdf") is not None:
-        if st.button("Change RF Kml (Edit Boundary)"):
-            st.session_state["edit_mode"] = True
-            st.experimental_rerun()
-except Exception:
-    pass
-
-# Edit AOI page handler
-if st.session_state.get("edit_mode", False):
-    st.title("Edit AOI Boundary")
-    aoi_gdf = st.session_state.get("aoi_gdf")
-    if aoi_gdf is None:
-        st.warning("No AOI loaded to edit")
-        st.stop()
-
 if st.session_state.get("generated", False):
 
     st.success("✅ Grid successfully generated! Scroll below to preview map and downloads.")
