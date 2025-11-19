@@ -655,9 +655,8 @@ def build_pdf_report_standard(
             if df_overlay is not None and not df_overlay.empty:
                 for idx, row in df_overlay.iterrows():
                     # set colored grid id
-                    pdf.set_text_color(3, 252, 252)
-                    pdf.cell(30, 8, str(int(row["grid_id"])), 1, align="C")
                     pdf.set_text_color(0, 0, 0)
+                    pdf.cell(30, 8, str(int(row["grid_id"])), 1, align="C")
                     pdf.cell(80, 8, f"{row['intersection_area_ha']:.4f}", 1, align="R")
                     pdf.ln(8)
                     if pdf.get_y() > 240:
