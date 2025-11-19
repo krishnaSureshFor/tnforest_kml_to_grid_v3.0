@@ -1,6 +1,3 @@
-# appv3.py (patched)
-# Patched by assistant: single shapefile download for Grid+Overlay & Grid Only,
-# Grid ID color in PDF (#03fcfc), invasive map labels colored #03fcfc.
 
 try:
     import leafmap.foliumap as leafmap
@@ -13,7 +10,7 @@ from shapely.geometry import box
 from shapely.ops import unary_union
 from shapely.geometry import mapping
 from pyproj import CRS
-import math, os, tempfile, zipfile, shutil
+import math, os, tempfile, zipfile
 from streamlit_folium import st_folium
 import folium
 from fpdf import FPDF
@@ -21,10 +18,8 @@ import matplotlib.pyplot as plt
 import contextily as ctx
 from lxml import etree
 import fiona
-import uuid, qrcode
+import uuid, os, qrcode
 from io import BytesIO
-import base64
-from PIL import Image
 
 def save_kml_for_viewer(kml_text):
     """Save KML with unique ID to public_kml folder for permanent hosting."""
@@ -222,6 +217,10 @@ def compute_overlay_area_by_grid(cells_ll, overlay_gdf):
     df = pd.DataFrame(rows)
     total_grid_area_ha = df["intersection_area_ha"].sum() if not df.empty else 0.0
     return df, overlay_area_ha, total_grid_area_ha
+
+    zone = int((lon + 180) / 6) + 1
+    epsg = 32600 + zone if lat >= 0 else 32700 + zone
+    return CRS.from_epsg(epsg)
 
 def make_grid_exact_clipped(polygons_ll, cell_size_m=100):
     """Generate clipped grid cells (ensures valid non-empty geometries in EPSG:4326)."""
@@ -481,38 +480,6 @@ def build_pdf_report_standard(
     if overlay_gdf is not None and not overlay_gdf.empty:
         overlay_gdf.to_crs(3857).boundary.plot(ax=ax, color="#FFD700", linewidth=3)
     ctx.add_basemap(ax, crs=3857, source=ctx.providers.Esri.WorldImagery, attribution=False)
-    # === Prepare overlay corner points for PDF labeling (lat/lon -> 3857) ===
-    overlay_points = []
-    try:
-        if overlay_gdf is not None and not overlay_gdf.empty:
-            overlay_coords = []
-            for geom in overlay_gdf.to_crs(4326).geometry:
-                if geom.is_empty:
-                    continue
-                if geom.geom_type == "Polygon":
-                    overlay_coords.extend(list(geom.exterior.coords))
-                elif geom.geom_type == "MultiPolygon":
-                    for part in geom.geoms:
-                        overlay_coords.extend(list(part.exterior.coords))
-            if overlay_coords:
-                lons = [pt[0] for pt in overlay_coords]
-                lats = [pt[1] for pt in overlay_coords]
-                pts = gpd.GeoSeries(gpd.points_from_xy(lons, lats), crs='EPSG:4326').to_crs(3857)
-                overlay_points = [(p.x, p.y) for p in pts]
-    except Exception:
-        overlay_points = []
-
-    # === Draw overlay corner labels (A, B, C...) on Page 1 PDF map ===
-    if overlay_points:
-        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        for idx, (x, y) in enumerate(overlay_points):
-            label = alphabet[idx % len(alphabet)]
-            try:
-                ax.text(x, y, label, fontsize=10, fontweight='bold',
-                        color='yellow', bbox=dict(facecolor='black', alpha=0.8, pad=1))
-            except Exception:
-                pass
-
     ax.axis("off")
     plt.tight_layout(pad=0.1)
     fig.savefig(map_img, dpi=250, bbox_inches="tight")
@@ -627,25 +594,13 @@ def build_pdf_report_standard(
                 ctx.add_basemap(ax, crs=3857, source=ctx.providers.Esri.WorldImagery, attribution=False)
                 ax.axis('off')
                 # Add labels at representative points (project to 3857)
-                # Add labels at representative points (project to 3857)
                 for idx, row in clipped_3857.iterrows():
                     try:
                         pt = row['geometry'].representative_point()
                         # representative_point is in 3857 already for clipped_3857
-                        ax.text(pt.x, pt.y, str(int(clipped_gdf.iloc[idx]['grid_id'])), fontsize=8, ha='center', va='center', color='#03fcfc')
+                        ax.text(pt.x, pt.y, str(int(clipped_gdf.iloc[idx]['grid_id'])), fontsize=8, ha='center', va='center')
                     except Exception:
                         pass
-
-                # === Draw overlay corner labels (A, B, C...) on invasive map (PDF only) ===
-                if 'overlay_points' in locals() and overlay_points:
-                    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                    for idx2, (x2, y2) in enumerate(overlay_points):
-                        lab = alphabet[idx2 % len(alphabet)]
-                        try:
-                            ax.text(x2, y2, lab, fontsize=10, fontweight='bold', color='yellow', bbox=dict(facecolor='black', alpha=0.8, pad=1))
-                        except Exception:
-                            pass
-
                 plt.tight_layout(pad=0.1)
                 fig.savefig(invasive_map_img, dpi=250, bbox_inches='tight')
                 plt.close(fig)
@@ -698,8 +653,6 @@ def build_pdf_report_standard(
 
             if df_overlay is not None and not df_overlay.empty:
                 for idx, row in df_overlay.iterrows():
-                    # set colored grid id
-                    pdf.set_text_color(0, 0, 0)
                     pdf.cell(30, 8, str(int(row["grid_id"])), 1, align="C")
                     pdf.cell(80, 8, f"{row['intersection_area_ha']:.4f}", 1, align="R")
                     pdf.ln(8)
@@ -713,10 +666,10 @@ def build_pdf_report_standard(
             else:
                 pdf.cell(0, 8, "No intersecting grid cells.", ln=1)
 
-            # Total area left-aligned at bottom (rounded up)
+            # Total area left-aligned at bottom
             pdf.ln(4)
             pdf.set_font("Helvetica", "B", 12)
-            pdf.cell(0, 10, f"TOTAL AREA INSIDE OVERLAY: {math.ceil(total_grid_area_ha)} Ha", ln=1, align="L")
+            pdf.cell(0, 10, f"TOTAL AREA INSIDE OVERLAY: {total_grid_area_ha:.0f} Ha", ln=1, align="L")
         except Exception as _e:
             pdf.set_font("Helvetica", "I", 10)
             pdf.cell(0, 8, f"Overlay detail table generation failed: {_e}", ln=1)
@@ -884,11 +837,7 @@ if st.session_state.get("edit_mode", False):
         modified_kml = os.path.join(tmpd, "Modified_AOI.kml")
         st.session_state["aoi_gdf"].to_file(modified_kml, driver="KML")
         with open(modified_kml, "rb") as f:
-            # if styled_download_button exists in your app, it will use; otherwise fallback to streamlit button shown elsewhere
-            try:
-                styled_download_button("Download Modified KML", f.read(), "Modified_AOI.kml", "application/vnd.google-earth.kml+xml", icon="📥", bg="#0ea5e9")
-            except Exception:
-                st.download_button("Download Modified KML", f.read(), file_name="Modified_AOI.kml", mime="application/vnd.google-earth.kml+xml")
+            styled_download_button("Download Modified KML", f.read(), "Modified_AOI.kml", "application/vnd.google-earth.kml+xml", icon="📥", bg="#0ea5e9")
     except Exception:
         pass
 
@@ -992,71 +941,20 @@ if st.session_state.get("generated", False):
     # ============================================================
     st.markdown("### 💾 Downloads")
 
-    # Single Shapefile zip (contains two folders: Grid_with_ID and Grid_Only)
-    def export_shapefiles_combined(cells_ll, overlay_gdf=None):
-        """
-        Create a ZIP bytes containing two folders:
-         - Grid_with_ID (ESRI shapefile set with grid_id attribute)
-         - Grid_Only (ESRI shapefile set without attributes)
-        Returns bytes of the ZIP file.
-        """
-        root_tmp = tempfile.mkdtemp()
-        try:
-            # prepare GeoDataFrames
-            gdf_grid_id = gpd.GeoDataFrame({"grid_id": range(1, len(cells_ll) + 1)}, geometry=cells_ll, crs="EPSG:4326")
-            gdf_grid_only = gpd.GeoDataFrame(geometry=cells_ll, crs="EPSG:4326")
-
-            # Folder1
-            folder1 = os.path.join(root_tmp, "Grid_with_ID")
-            os.makedirs(folder1, exist_ok=True)
-            # Fiona/GeoPandas require file path prefix without extension
-            out1 = os.path.join(folder1, "Grid_with_ID")
-            gdf_grid_id.to_file(out1 + ".shp", driver="ESRI Shapefile")
-
-            # Folder2
-            folder2 = os.path.join(root_tmp, "Grid_Only")
-            os.makedirs(folder2, exist_ok=True)
-            out2 = os.path.join(folder2, "Grid_Only")
-            gdf_grid_only.to_file(out2 + ".shp", driver="ESRI Shapefile")
-
-            # If overlay_gdf is provided, also include it as overlay.shp in Grid_with_ID folder (optional)
-            if overlay_gdf is not None and not overlay_gdf.empty:
-                try:
-                    overlay_out = os.path.join(folder1, "Overlay")
-                    overlay_gdf.to_file(overlay_out + ".shp", driver="ESRI Shapefile")
-                except Exception:
-                    # ignore overlay write failure, but continue packaging
-                    pass
-
-            # Zip the whole root_tmp into bytes
-            zip_buf = BytesIO()
-            with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as z:
-                for foldername, subfolders, filenames in os.walk(root_tmp):
-                    for filename in filenames:
-                        file_path = os.path.join(foldername, filename)
-                        # archive name: remove root_tmp prefix and keep folder structure
-                        arcname = os.path.relpath(file_path, root_tmp)
-                        z.write(file_path, arcname=arcname)
-            zip_buf.seek(0)
-            return zip_buf.getvalue()
-        finally:
-            # cleanup disk files
-            try:
-                shutil.rmtree(root_tmp)
-            except Exception:
-                pass
-
+    # Shapefile downloads: Grid with ID & Grid Only
+    st.markdown("### 📦 Shapefile Downloads")
+    c4, c5 = st.columns(2)
     try:
-        shp_bytes = export_shapefiles_combined(st.session_state["cells_ll"], st.session_state.get("overlay_gdf"))
-        st.download_button(
-            "📦 Download Shapefiles (Grid+Overlay & Grid Only)",
-            shp_bytes,
-            file_name="shapefiles_grid.zip",
-            mime="application/zip",
-        )
-    except Exception as e:
-        st.error(f"Shapefile export failed: {e}")
-
+        gdf_grid_id = gpd.GeoDataFrame({"grid_id": range(1, len(cells_ll) + 1)}, geometry=cells_ll, crs="EPSG:4326")
+        gdf_grid_only = gpd.GeoDataFrame(geometry=cells_ll, crs="EPSG:4326")
+        shp_grid_id = export_shapefile_zip(gdf_grid_id, "Grid_with_ID")
+        shp_grid_only = export_shapefile_zip(gdf_grid_only, "Grid_Only")
+        with c4:
+            styled_download_button("Grid (Shapefile + ID)", shp_grid_id, "Grid_with_ID.zip", "application/zip", icon="🗂️", bg="#10b981")
+        with c5:
+            styled_download_button("Grid Only (Shapefile)", shp_grid_only, "Grid_Only.zip", "application/zip", icon="📁", bg="#f59e0b")
+    except Exception:
+        st.error("Shapefile export failed")
     c1, c2, c3 = st.columns(3)
 
     with c1:
