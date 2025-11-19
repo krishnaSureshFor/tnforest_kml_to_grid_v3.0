@@ -481,6 +481,38 @@ def build_pdf_report_standard(
     if overlay_gdf is not None and not overlay_gdf.empty:
         overlay_gdf.to_crs(3857).boundary.plot(ax=ax, color="#FFD700", linewidth=3)
     ctx.add_basemap(ax, crs=3857, source=ctx.providers.Esri.WorldImagery, attribution=False)
+    # === Prepare overlay corner points for PDF labeling (lat/lon -> 3857) ===
+    overlay_points = []
+    try:
+        if overlay_gdf is not None and not overlay_gdf.empty:
+            overlay_coords = []
+            for geom in overlay_gdf.to_crs(4326).geometry:
+                if geom.is_empty:
+                    continue
+                if geom.geom_type == "Polygon":
+                    overlay_coords.extend(list(geom.exterior.coords))
+                elif geom.geom_type == "MultiPolygon":
+                    for part in geom.geoms:
+                        overlay_coords.extend(list(part.exterior.coords))
+            if overlay_coords:
+                lons = [pt[0] for pt in overlay_coords]
+                lats = [pt[1] for pt in overlay_coords]
+                pts = gpd.GeoSeries(gpd.points_from_xy(lons, lats), crs='EPSG:4326').to_crs(3857)
+                overlay_points = [(p.x, p.y) for p in pts]
+    except Exception:
+        overlay_points = []
+
+    # === Draw overlay corner labels (A, B, C...) on Page 1 PDF map ===
+    if overlay_points:
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        for idx, (x, y) in enumerate(overlay_points):
+            label = alphabet[idx % len(alphabet)]
+            try:
+                ax.text(x, y, label, fontsize=10, fontweight='bold',
+                        color='yellow', bbox=dict(facecolor='black', alpha=0.8, pad=1))
+            except Exception:
+                pass
+
     ax.axis("off")
     plt.tight_layout(pad=0.1)
     fig.savefig(map_img, dpi=250, bbox_inches="tight")
@@ -595,6 +627,7 @@ def build_pdf_report_standard(
                 ctx.add_basemap(ax, crs=3857, source=ctx.providers.Esri.WorldImagery, attribution=False)
                 ax.axis('off')
                 # Add labels at representative points (project to 3857)
+                # Add labels at representative points (project to 3857)
                 for idx, row in clipped_3857.iterrows():
                     try:
                         pt = row['geometry'].representative_point()
@@ -602,6 +635,17 @@ def build_pdf_report_standard(
                         ax.text(pt.x, pt.y, str(int(clipped_gdf.iloc[idx]['grid_id'])), fontsize=8, ha='center', va='center', color='#03fcfc')
                     except Exception:
                         pass
+
+                # === Draw overlay corner labels (A, B, C...) on invasive map (PDF only) ===
+                if 'overlay_points' in locals() and overlay_points:
+                    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                    for idx2, (x2, y2) in enumerate(overlay_points):
+                        lab = alphabet[idx2 % len(alphabet)]
+                        try:
+                            ax.text(x2, y2, lab, fontsize=10, fontweight='bold', color='yellow', bbox=dict(facecolor='black', alpha=0.8, pad=1))
+                        except Exception:
+                            pass
+
                 plt.tight_layout(pad=0.1)
                 fig.savefig(invasive_map_img, dpi=250, bbox_inches='tight')
                 plt.close(fig)
