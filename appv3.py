@@ -495,7 +495,7 @@ def build_pdf_report_standard(
     # -------------------------------
     # Helper: Push KML file to GitHub
     # -------------------------------
-    def push_kml_to_repo(kml_path, kml_id, repo_name="krishnaSureshFor/tnforest_kml_to_grid_v2.0"):
+    def push_kml_to_repo(kml_path, kml_id, repo_name="krishnaSureshFor/tnforest_kml_to_grid_v3.0"):
         """Push generated KML to GitHub repo's public_kml folder."""
         token = os.getenv("GITHUB_TOKEN")  # set this in Streamlit Cloud → Settings → Secrets
         print("GITHUB_TOKEN found:", bool(token))
@@ -520,7 +520,7 @@ def build_pdf_report_standard(
                 repo.create_file(path_in_repo, f"Add KML {kml_id}", content, branch="main")
 
             print(f"Uploaded {path_in_repo} to GitHub.")
-            return f"https://krishnaSureshFor.github.io/tnforest_kml_to_grid_v2.0/public_kml/{kml_id}.kml"
+            return f"https://krishnaSureshFor.github.io/tnforest_kml_to_grid_v3.0/public_kml/{kml_id}.kml"
 
         except Exception as e:
             print("GitHub push failed:", e)
@@ -793,12 +793,12 @@ def build_pdf_report_standard(
             # ✅ Push to GitHub
             live_kml_url = push_kml_to_repo(kml_path, kml_id)
             if not live_kml_url:
-                live_kml_url = f"https://krishnaSureshFor.github.io/tnforest_kml_to_grid_v2.0/viewer/?id={kml_id}"
+                live_kml_url = f"https://krishnaSureshFor.github.io/tnforest_kml_to_grid_v3.0/viewer/?id={kml_id}"
             else:
-                live_kml_url = f"https://krishnaSureshFor.github.io/tnforest_kml_to_grid_v2.0/viewer/?id={kml_id}"
+                live_kml_url = f"https://krishnaSureshFor.github.io/tnforest_kml_to_grid_v3.0/viewer/?id={kml_id}"
 
         else:
-            live_kml_url = "https://krishnaSureshFor.github.io/tnforest_kml_to_grid_v2.0"
+            live_kml_url = "https://krishnaSureshFor.github.io/tnforest_kml_to_grid_v3.0"
 
         # Generate QR
         qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_H)
