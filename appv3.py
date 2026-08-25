@@ -17,6 +17,8 @@ import math, os, tempfile, zipfile, shutil
 from streamlit_folium import st_folium
 import folium
 from fpdf import FPDF
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import contextily as ctx
 from lxml import etree
@@ -202,12 +204,12 @@ def read_kml_kmz(path):
     if str(path).lower().endswith(".kmz"):
         try:
             with zipfile.ZipFile(path, 'r') as z:
-                tmp_dir = tempfile.mkdtemp()
-                z.extractall(tmp_dir)
-                for root, _, files in os.walk(tmp_dir):
-                    for file in files:
-                        if file.lower().endswith(".kml"):
-                            gdfs.extend(read_layers(os.path.join(root, file)))
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    z.extractall(tmp_dir)
+                    for root, _, files in os.walk(tmp_dir):
+                        for file in files:
+                            if file.lower().endswith(".kml"):
+                                gdfs.extend(read_layers(os.path.join(root, file)))
         except Exception:
              # If zip fails, try reading as raw
              gdfs.extend(read_layers(path))
@@ -524,7 +526,8 @@ def build_pdf_report_standard(
 
     # Map image
     tmp_dir = tempfile.gettempdir()
-    map_img = os.path.join(tmp_dir, "map_overlay.png")
+    unique_id = uuid.uuid4().hex
+    map_img = os.path.join(tmp_dir, f"map_overlay_{unique_id}.png")
     fig, ax = plt.subplots(figsize=(7, 5.8))
     merged_gdf = gpd.GeoSeries([merged_ll], crs="EPSG:4326").to_crs(3857)
     grid_gdf = gpd.GeoSeries(cells_ll, crs="EPSG:4326").to_crs(3857)
@@ -634,7 +637,7 @@ def build_pdf_report_standard(
 
                 # Plot map (same visual layout as Page 1)
                 tmp_dir = tempfile.gettempdir()
-                invasive_map_img = os.path.join(tmp_dir, "map_invasive.png")
+                invasive_map_img = os.path.join(tmp_dir, f"map_invasive_{unique_id}.png")
                 fig, ax = plt.subplots(figsize=(7, 5.8))
                 # reproject to web mercator for basemap plotting
                 clipped_3857 = clipped_gdf.to_crs(3857)
@@ -654,6 +657,22 @@ def build_pdf_report_standard(
                         ax.text(pt.x, pt.y, str(int(clipped_gdf.iloc[idx]['grid_id'])), fontsize=8, ha='center', va='center', color='#03fcfc')
                     except Exception:
                         pass
+
+                # Add corner point labels matching the GPS table S.No
+                pt_idx = 1
+                for geom in overlay_3857.geometry:
+                    if geom.is_empty:
+                        continue
+                    coords = []
+                    if geom.geom_type == "Polygon":
+                        coords = list(geom.exterior.coords)
+                    elif geom.geom_type == "MultiPolygon":
+                        for part in geom.geoms:
+                            coords.extend(list(part.exterior.coords))
+                    for x, y, *_ in coords:
+                        ax.text(x, y, str(pt_idx), fontsize=8, ha='center', va='center', color='black', weight='bold', bbox=dict(facecolor='white', alpha=0.7, pad=0.5, edgecolor='none'))
+                        pt_idx += 1
+
                 plt.tight_layout(pad=0.1)
                 fig.savefig(invasive_map_img, dpi=250, bbox_inches='tight')
                 plt.close(fig)
@@ -784,6 +803,15 @@ def build_pdf_report_standard(
         pdf.set_text_color(255, 0, 0)
         pdf.cell(0, 10, f"QR generation failed: {e}", ln=1, align="C")
         pdf.set_text_color(0, 0, 0)
+
+    # Cleanup temp images
+    try:
+        if 'map_img' in locals() and os.path.exists(map_img):
+            os.remove(map_img)
+        if 'invasive_map_img' in locals() and os.path.exists(invasive_map_img):
+            os.remove(invasive_map_img)
+    except Exception:
+        pass
 
     result = pdf.output(dest="S")
     return bytes(result) if isinstance(result, (bytes, bytearray)) else result.encode("latin1", errors="ignore")
@@ -1086,3 +1114,12 @@ else:
 
 # Optional: Hide Streamlit spinner for smoother UI
 st.markdown("<style>.stSpinner{display:none}</style>", unsafe_allow_html=True)
+
+# Clean up temporary uploaded files to prevent disk leaks
+try:
+    if 'aoi_path' in locals() and aoi_path and os.path.exists(aoi_path):
+        os.remove(aoi_path)
+    if 'ov_path' in locals() and ov_path and os.path.exists(ov_path):
+        os.remove(ov_path)
+except Exception:
+    pass
