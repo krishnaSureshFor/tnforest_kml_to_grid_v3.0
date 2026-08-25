@@ -65,7 +65,18 @@ st.set_page_config(page_title="KML Grid Generator v2.0", layout="wide")
 # 🌳 Custom gradient background and theme
 st.markdown("""
 <style>
-.stApp { background: linear-gradient(135deg, #f1f8e9 0%, #e8f5e9 100%); }
+.stApp { 
+    background: linear-gradient(135deg, #f1f8e9 0%, #e8f5e9 100%); 
+    color: #172a08 !important;
+}
+/* Ensure main app text is dark, excluding the sidebar */
+.stApp p, .stApp span, .stApp div, .stApp h1, .stApp h2, .stApp h3 {
+    color: #172a08;
+}
+/* Specifically force spinner text to be dark */
+div[data-testid="stSpinner"] * {
+    color: #172a08 !important;
+}
 section[data-testid="stSidebar"] {
     background: linear-gradient(180deg, #2e4c16 0%, #172a08 100%);
 }
