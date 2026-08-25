@@ -65,37 +65,50 @@ st.set_page_config(page_title="KML Grid Generator v2.0", layout="wide")
 # 🌳 Custom gradient background and theme
 st.markdown("""
 <style>
-.stApp { background: linear-gradient(135deg, #f9fbd7 0%, #e2f7ca 50%, #d2f5d7 100%); }
+.stApp { background: linear-gradient(135deg, #f1f8e9 0%, #e8f5e9 100%); }
 section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #d9efff 0%, #bde0fe 100%);
-    color: #1d3557;
+    background: linear-gradient(180deg, #2e4c16 0%, #172a08 100%);
+}
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] span,
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] div[data-baseweb="select"] * {
+    color: #fdf5c9 !important;
 }
 section[data-testid="stSidebar"] h2 {
-    color: #023047; font-weight: 800 !important; text-align: center;
-    border-bottom: 2px solid #8ecae6; padding-bottom: 6px;
+    color: #ffeb3b !important; font-weight: 800 !important; text-align: center;
+    border-bottom: 2px solid #ffeb3b; padding-bottom: 6px;
 }
 input, textarea, select {
-    background-color: #fafff4 !important; border: 1px solid #b6d7a8 !important;
-    color: #1b4332 !important; border-radius: 6px !important;
+    background-color: #f1f8e9 !important; border: 1px solid #558b2f !important;
+    color: #172a08 !important; border-radius: 6px !important;
 }
 div.stButton > button {
-    background: linear-gradient(90deg, #8fd694, #65c18c);
-    color: white; font-weight: 600; border-radius: 10px; border: none;
+    background: linear-gradient(90deg, #fbc02d, #ffeb3b);
+    color: #172a08 !important; font-weight: 700; border-radius: 10px; border: none;
     box-shadow: 1px 2px 5px rgba(0,0,0,0.2); transition: all 0.2s ease;
 }
-div.stButton > button:hover { background: linear-gradient(90deg, #79c781, #58b16e); transform: scale(1.03); }
+div.stButton > button:hover { background: linear-gradient(90deg, #ffeb3b, #fff59d); transform: scale(1.03); }
 .stDownloadButton > button {
-    background: linear-gradient(90deg, #ffeb91, #ffd857);
-    color: #333; border-radius: 10px; border: none; font-weight: 600;
-    box-shadow: 1px 2px 4px rgba(0,0,0,0.15); transition: all 0.2s ease;
+    background: linear-gradient(90deg, #33691e, #558b2f);
+    color: #ffeb3b !important; border-radius: 10px; border: none; font-weight: 700;
+    box-shadow: 1px 2px 4px rgba(0,0,0,0.2); transition: all 0.2s ease;
 }
-.stDownloadButton > button:hover { background: linear-gradient(90deg, #ffe372, #ffc94a); transform: scale(1.03); }
+.stDownloadButton > button:hover { background: linear-gradient(90deg, #558b2f, #689f38); transform: scale(1.03); }
 iframe[title="streamlit_folium"] {
     border-radius: 18px;
     border: 5px double transparent;
-    background-image: linear-gradient(white, white), linear-gradient(90deg, #4caf50, #d4af37);
+    background-image: linear-gradient(white, white), linear-gradient(90deg, #33691e, #ffeb3b);
     background-origin: border-box; background-clip: content-box, border-box;
     box-shadow: 0 5px 12px rgba(0,0,0,0.25); padding: 2px;
+}
+/* Ensure the text inside the file uploader drop zone is visible */
+.stFileUploader > div > div > div > div > div > p {
+    color: #fdf5c9 !important;
+}
+/* File uploader 'Browse files' text color fix */
+.stFileUploader button {
+    color: #172a08 !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -105,9 +118,9 @@ iframe[title="streamlit_folium"] {
 # ================================================================
 st.markdown("""
 <div style='text-align:center; padding:15px; 
-background:linear-gradient(90deg, #4caf50, #81c784);
-border-radius:10px; color:white; font-size:28px; font-weight:700;
-box-shadow:0 4px 10px rgba(0,0,0,0.25); letter-spacing:1px;'>
+background:linear-gradient(90deg, #2e4c16, #558b2f);
+border-radius:10px; color:#ffeb3b; font-size:28px; font-weight:700;
+box-shadow:0 4px 10px rgba(0,0,0,0.3); letter-spacing:1px;'>
 🌿 KML Grid Generator v2.0 - Unified Invasive Report 🌿
 </div>
 """, unsafe_allow_html=True)
