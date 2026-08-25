@@ -984,10 +984,11 @@ if st.session_state.get("generated", False):
     # Run cached generator (no recomputation, no reload on download)
     # ============================================================
     try:
-        outputs = generate_all_outputs(
-            aoi_path, ov_path,
-            st.session_state["user_inputs"],
-            cell_size, title_text, density, area_invasive
+        with st.spinner("⏳ Generating Grid, KML, and PDF... This may take up to a minute."):
+            outputs = generate_all_outputs(
+                aoi_path, ov_path,
+                st.session_state["user_inputs"],
+                cell_size, title_text, density, area_invasive
         )
     except ValueError as e:
         st.error(f"❌ {e}")
@@ -1132,8 +1133,6 @@ if st.session_state.get("generated", False):
 else:
     st.info("👆 Use Sidebar Arrow to Upload AOI (KML/KMZ) and Overlay, adjust details, then click ▶ **Generate Grid**.")
 
-# Optional: Hide Streamlit spinner for smoother UI
-st.markdown("<style>.stSpinner{display:none}</style>", unsafe_allow_html=True)
 
 # Clean up temporary uploaded files to prevent disk leaks
 try:

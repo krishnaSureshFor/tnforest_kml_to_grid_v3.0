@@ -92,6 +92,65 @@
       console.warn("⚠️ Measurement plugin not loaded.");
     }
 
+    // --- Live Location Button ---
+    let locMarker = null;
+    let watchId = null;
+
+    const blueDotIcon = L.divIcon({
+      className: 'blue-dot',
+      html: '<div style="width:14px; height:14px; background-color:#007bff; border-radius:50%; border:2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
+      iconSize: [18, 18],
+      iconAnchor: [9, 9]
+    });
+
+    const locButton = L.control({ position: "topright" });
+    locButton.onAdd = function() {
+      const btn = L.DomUtil.create("button", "loc-button");
+      btn.innerHTML = "📍 Live Location";
+      btn.style.cssText = "padding: 8px 12px; font-weight: bold; background: white; border: 2px solid rgba(0,0,0,0.2); border-radius: 5px; cursor: pointer; color: #333; box-shadow: 0 1px 4px rgba(0,0,0,0.3);";
+      
+      let isTracking = false;
+      btn.onclick = function() {
+        if (!isTracking) {
+          btn.style.background = "#e6f7ff";
+          btn.style.color = "#007bff";
+          isTracking = true;
+          if (navigator.geolocation) {
+             // Fetch immediately
+             navigator.geolocation.getCurrentPosition(updatePosition, err => console.warn(err), { enableHighAccuracy: true });
+             // Then every 2 seconds
+             watchId = setInterval(() => {
+                 navigator.geolocation.getCurrentPosition(updatePosition, err => console.warn(err), { enableHighAccuracy: true });
+             }, 2000);
+          } else {
+             alert("Geolocation is not supported by this browser.");
+          }
+        } else {
+          // Stop tracking
+          btn.style.background = "white";
+          btn.style.color = "#333";
+          isTracking = false;
+          clearInterval(watchId);
+          if (locMarker) {
+             map.removeLayer(locMarker);
+             locMarker = null;
+          }
+        }
+      };
+      return btn;
+    };
+    locButton.addTo(map);
+
+    function updatePosition(pos) {
+        const latlng = [pos.coords.latitude, pos.coords.longitude];
+        if (!locMarker) {
+            locMarker = L.marker(latlng, {icon: blueDotIcon}).addTo(map);
+            map.setView(latlng, 16);
+        } else {
+            locMarker.setLatLng(latlng);
+        }
+    }
+
     // Loader handler
     function hideLoader() {
       const el = document.getElementById("loading");
