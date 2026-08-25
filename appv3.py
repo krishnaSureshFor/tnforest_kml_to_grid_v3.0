@@ -118,8 +118,8 @@ box-shadow:0 4px 10px rgba(0,0,0,0.25); letter-spacing:1px;'>
 st.sidebar.header("⚙️ Tool Settings")
 
 with st.sidebar.expander("📂 Upload Files (AOI / Overlay)", expanded=True):
-    uploaded_aoi = st.file_uploader("Upload KML/KMZ", type=["kml", "kmz"], key="aoi_file")
-    overlay_file = st.file_uploader("Optional Invasive KML/KMZ", type=["kml", "kmz"], key="overlay_file")
+    uploaded_aoi = st.file_uploader("Upload RF/RL kml", type=["kml", "kmz"], key="aoi_file")
+    overlay_file = st.file_uploader("Upload Overlay Kml", type=["kml", "kmz"], key="overlay_file")
 
 
 with st.sidebar.expander("🌲 KML Label Details"):
