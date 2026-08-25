@@ -604,10 +604,10 @@ def build_pdf_report_standard(
                 continue
             coords = []
             if geom.geom_type == "Polygon":
-                coords = list(geom.exterior.coords)
+                coords = list(geom.exterior.coords)[:-1]
             elif geom.geom_type == "MultiPolygon":
                 for part in geom.geoms:
-                    coords.extend(list(part.exterior.coords))
+                    coords.extend(list(part.exterior.coords)[:-1])
             for lon, lat, *_ in coords:
                 pdf.cell(25, 7, str(row), 1)
                 pdf.cell(75, 7, f"{lat:.6f}", 1, align="R")
@@ -662,12 +662,16 @@ def build_pdf_report_standard(
                 # Add basemap (Esri World Imagery)
                 ctx.add_basemap(ax, crs=3857, source=ctx.providers.Esri.WorldImagery, attribution=False)
                 ax.axis('off')
+                import matplotlib.patheffects as pe
+                
                 # Add labels at representative points (project to 3857)
                 for idx, row in clipped_3857.iterrows():
                     try:
                         pt = row['geometry'].representative_point()
                         # representative_point is in 3857 already for clipped_3857
-                        ax.text(pt.x, pt.y, str(int(clipped_gdf.iloc[idx]['grid_id'])), fontsize=8, ha='center', va='center', color='#03fcfc')
+                        ax.text(pt.x, pt.y, str(int(clipped_gdf.iloc[idx]['grid_id'])), fontsize=9, 
+                                ha='center', va='center', color='#00ffff', weight='bold',
+                                path_effects=[pe.withStroke(linewidth=3, foreground='black')])
                     except Exception:
                         pass
 
@@ -678,12 +682,13 @@ def build_pdf_report_standard(
                         continue
                     coords = []
                     if geom.geom_type == "Polygon":
-                        coords = list(geom.exterior.coords)
+                        coords = list(geom.exterior.coords)[:-1]
                     elif geom.geom_type == "MultiPolygon":
                         for part in geom.geoms:
-                            coords.extend(list(part.exterior.coords))
+                            coords.extend(list(part.exterior.coords)[:-1])
                     for x, y, *_ in coords:
-                        ax.text(x, y, str(pt_idx), fontsize=8, ha='center', va='center', color='black', weight='bold', bbox=dict(facecolor='white', alpha=0.7, pad=0.5, edgecolor='none'))
+                        ax.text(x, y, str(pt_idx), fontsize=10, ha='center', va='center', color='#ffff00', 
+                                weight='bold', path_effects=[pe.withStroke(linewidth=3, foreground='black')])
                         pt_idx += 1
 
                 plt.tight_layout(pad=0.1)
