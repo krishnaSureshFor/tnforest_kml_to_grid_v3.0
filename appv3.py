@@ -317,7 +317,7 @@ def make_grid_exact_clipped(polygons_ll, cell_size_m=100):
 
     # --- Reproject final grid cells back to EPSG:4326 for KML ---
     if not cells:
-        print("⚠️ No valid grid cells generated — check AOI extent.")
+        print("No valid grid cells generated - check AOI extent.")
     cells_ll = [
         gpd.GeoSeries([c], crs=utm).to_crs(epsg=4326).iloc[0]
         for c in cells if not c.is_empty
@@ -487,9 +487,9 @@ def build_pdf_report_standard(
     def push_kml_to_repo(kml_path, kml_id, repo_name="krishnaSureshFor/tnforest_kml_to_grid_v2.0"):
         """Push generated KML to GitHub repo's public_kml folder."""
         token = os.getenv("GITHUB_TOKEN")  # set this in Streamlit Cloud → Settings → Secrets
-        print("🔍 GITHUB_TOKEN found:", bool(token))
+        print("GITHUB_TOKEN found:", bool(token))
         if not token:
-            print("⚠️ Missing GITHUB_TOKEN — cannot push to repo")
+            print("Missing GITHUB_TOKEN - cannot push to repo")
             return None
         try:
             g = Github(token)
@@ -508,7 +508,7 @@ def build_pdf_report_standard(
             except Exception:
                 repo.create_file(path_in_repo, f"Add KML {kml_id}", content, branch="main")
 
-            print(f"✅ Uploaded {path_in_repo} to GitHub.")
+            print(f"Uploaded {path_in_repo} to GitHub.")
             return f"https://krishnaSureshFor.github.io/tnforest_kml_to_grid_v2.0/public_kml/{kml_id}.kml"
 
         except Exception as e:
