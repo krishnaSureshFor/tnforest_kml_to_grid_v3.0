@@ -13,7 +13,7 @@ from shapely.geometry import box
 from shapely.ops import unary_union
 from shapely.geometry import mapping
 from pyproj import CRS
-import math, os, tempfile, zipfile, shutil
+import math, os, tempfile, zipfile, shutil, hashlib
 from streamlit_folium import st_folium
 import folium
 from fpdf import FPDF
@@ -950,20 +950,28 @@ if st.session_state.get("generated", False):
     st.success("✅ Grid successfully generated! Scroll below to preview map and downloads.")
     aoi_path, ov_path = None, None
 
+    def get_stable_temp_path(uploaded_file):
+        if not uploaded_file:
+            return None
+        file_bytes = uploaded_file.getvalue()
+        file_hash = hashlib.md5(file_bytes).hexdigest()
+        ext = ".kmz" if uploaded_file.name.endswith(".kmz") else ".kml"
+        tmp_path = os.path.join(tempfile.gettempdir(), f"uploaded_{file_hash}{ext}")
+        if not os.path.exists(tmp_path):
+            with open(tmp_path, "wb") as f:
+                f.write(file_bytes)
+        return tmp_path
+
     # Handle AOI (required)
     if uploaded_aoi:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz" if uploaded_aoi.name.endswith(".kmz") else ".kml") as tmp:
-            tmp.write(uploaded_aoi.read())
-            aoi_path = tmp.name
+        aoi_path = get_stable_temp_path(uploaded_aoi)
     else:
         st.warning("⚠️ Please upload an AOI file before generating.")
         st.stop()
 
     # Handle Overlay (optional)
     if overlay_file:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz" if overlay_file.name.endswith(".kmz") else ".kml") as tmp:
-            tmp.write(overlay_file.read())
-            ov_path = tmp.name
+        ov_path = get_stable_temp_path(overlay_file)
     else:
         ov_path = None
 
@@ -987,14 +995,8 @@ if st.session_state.get("generated", False):
     # MAP PREVIEW — Static and stable
     # ============================================================
     m = folium.Map(location=[11, 78.5], zoom_start=8)
-
-    gdf_for_bounds = read_kml_safely(aoi_path)
-    gdf_for_bounds = clean_polygon_gdf(gdf_for_bounds)
-    if gdf_for_bounds is None or gdf_for_bounds.empty:
-        st.error("AOI file has no valid polygon geometries for map preview.")
-        st.stop()
-
-    aoi_union = unary_union(gdf_for_bounds.geometry)
+    
+    aoi_union = st.session_state["merged_ll"]
 
     # AOI boundary
     folium.GeoJson(
@@ -1025,7 +1027,7 @@ if st.session_state.get("generated", False):
         [aoi_union.bounds[3], aoi_union.bounds[2]],
     ]
     m.fit_bounds(bounds)
-    st_folium(m, width=1200, height=700)
+    st_folium(m, width=1200, height=700, returned_objects=[])
 
     # ============================================================
     # DOWNLOADS — No reload on click
