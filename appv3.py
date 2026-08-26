@@ -153,7 +153,6 @@ with st.sidebar.expander("🌲 KML Label Details"):
     year_of_work = st.text_input("Year of Work", placeholder="Year of Work", key="year_of_work")
 
 with st.sidebar.expander("📄 PDF Report Details"):
-    logo_file = st.file_uploader("Upload Logo (Optional)", type=["png", "jpg", "jpeg"], key="logo_file")
     title_text = st.text_input("Report Title", placeholder="Title, Range", key="title_text")
     density = st.text_input("Density", placeholder="Medium/Light/Dense", key="density")
     area_invasive = st.text_input("Area of Invasive (Ha)", placeholder="Area in Ha", key="area_invasive")
@@ -479,7 +478,7 @@ def generate_labeled_kml(cells_ll, merged_ll, user_inputs, overlay_gdf=None):
 # ================================================================
 def build_pdf_report_standard(
     cells_ll, merged_ll, user_inputs, cell_size,
-    overlay_gdf, title_text, density, area_invasive, labeled_kml=None, logo_path=None
+    overlay_gdf, title_text, density, area_invasive, labeled_kml=None
 ):
     import geopandas as gpd, matplotlib.pyplot as plt, contextily as ctx, tempfile, os
     from fpdf import FPDF
@@ -492,6 +491,7 @@ def build_pdf_report_standard(
     from datetime import datetime
 
     MAP_X, MAP_Y, MAP_W, MAP_H, LEGEND_GAP = 15, 55, 180, 145, 8
+    EMBLEM_PATH = os.path.join(os.path.dirname(__file__), "tn_emblem.png")
 
     # -------------------------------
     # Helper: Push KML file to GitHub
@@ -542,8 +542,8 @@ def build_pdf_report_standard(
     # Page 1 — Header + Map
     # -------------------------------
     pdf.add_page()
-    if logo_path and os.path.exists(logo_path):
-        pdf.image(logo_path, x=93, y=8, w=25)
+    if os.path.exists(EMBLEM_PATH):
+        pdf.image(EMBLEM_PATH, x=93, y=8, w=25)
         
     pdf.set_y(35)
     pdf.set_font("Helvetica", "B", 16)
@@ -952,7 +952,7 @@ cell_size = st.session_state.get("cell_size", cell_size)
 # CACHED OUTPUT GENERATOR
 # ================================================================
 @st.cache_data(show_spinner=False)
-def generate_all_outputs(aoi_path, overlay_path, user_inputs, cell_size, title_text, density, area_invasive, logo_path=None):
+def generate_all_outputs(aoi_path, overlay_path, user_inputs, cell_size, title_text, density, area_invasive):
     # --- Read and clean AOI to polygons only ---
     gdf = read_kml_safely(aoi_path)
     gdf = clean_polygon_gdf(gdf)
@@ -973,7 +973,7 @@ def generate_all_outputs(aoi_path, overlay_path, user_inputs, cell_size, title_t
     pdf_bytes = build_pdf_report_standard(
         cells_ll, merged_ll, user_inputs, cell_size,
         overlay_gdf, title_text, density, area_invasive,
-        labeled_kml=labeled_kml, logo_path=logo_path
+        labeled_kml=labeled_kml
     )
 
     return {
@@ -1076,20 +1076,6 @@ if st.session_state.get("generated", False):
     else:
         ov_path = None
 
-    def get_stable_temp_path_img(uploaded_file):
-        if not uploaded_file:
-            return None
-        file_bytes = uploaded_file.getvalue()
-        file_hash = hashlib.md5(file_bytes).hexdigest()
-        ext = os.path.splitext(uploaded_file.name)[1].lower()
-        tmp_path = os.path.join(tempfile.gettempdir(), f"img_{file_hash}{ext}")
-        if not os.path.exists(tmp_path):
-            with open(tmp_path, "wb") as f:
-                f.write(file_bytes)
-        return tmp_path
-
-    # Handle Logo
-    logo_path = get_stable_temp_path_img(logo_file)
 
     # ============================================================
     # Run cached generator (no recomputation, no reload on download)
@@ -1099,7 +1085,7 @@ if st.session_state.get("generated", False):
             outputs = generate_all_outputs(
                 aoi_path, ov_path,
                 st.session_state["user_inputs"],
-                cell_size, title_text, density, area_invasive, logo_path
+                cell_size, title_text, density, area_invasive
         )
     except ValueError as e:
         st.error(f"❌ {e}")
