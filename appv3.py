@@ -153,6 +153,7 @@ with st.sidebar.expander("🌲 KML Label Details"):
     year_of_work = st.text_input("Year of Work", placeholder="Year of Work", key="year_of_work")
 
 with st.sidebar.expander("📄 PDF Report Details"):
+    logo_file = st.file_uploader("Upload Logo (Optional)", type=["png", "jpg", "jpeg"], key="logo_file")
     title_text = st.text_input("Report Title", placeholder="Title, Range", key="title_text")
     density = st.text_input("Density", placeholder="Medium/Light/Dense", key="density")
     area_invasive = st.text_input("Area of Invasive (Ha)", placeholder="Area in Ha", key="area_invasive")
@@ -478,7 +479,7 @@ def generate_labeled_kml(cells_ll, merged_ll, user_inputs, overlay_gdf=None):
 # ================================================================
 def build_pdf_report_standard(
     cells_ll, merged_ll, user_inputs, cell_size,
-    overlay_gdf, title_text, density, area_invasive, labeled_kml=None
+    overlay_gdf, title_text, density, area_invasive, labeled_kml=None, logo_path=None
 ):
     import geopandas as gpd, matplotlib.pyplot as plt, contextily as ctx, tempfile, os
     from fpdf import FPDF
@@ -488,9 +489,9 @@ def build_pdf_report_standard(
     from github import Github
     from PIL import Image
     import base64
+    from datetime import datetime
 
     MAP_X, MAP_Y, MAP_W, MAP_H, LEGEND_GAP = 15, 55, 180, 145, 8
-    EMBLEM_PATH = os.path.join(os.path.dirname(__file__), "tn_emblem.png")
 
     # -------------------------------
     # Helper: Push KML file to GitHub
@@ -529,9 +530,10 @@ def build_pdf_report_standard(
     class PDF(FPDF):
         def footer(self):
             self.set_y(-15)
-            self.set_font("Helvetica", "I", 9)
-            self.set_text_color(80, 80, 80)
-            self.cell(0, 10, f"Page {self.page_no()}", 0, 0, "C")
+            self.set_font("Helvetica", "I", 8)
+            self.set_text_color(100, 100, 100)
+            date_str = datetime.now().strftime("%d-%b-%Y")
+            self.cell(0, 10, f"Generated on {date_str} | KML Grid Generator v3.0 | Page {self.page_no()}", 0, 0, "C")
 
     pdf = PDF("P", "mm", "A4")
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -540,12 +542,15 @@ def build_pdf_report_standard(
     # Page 1 — Header + Map
     # -------------------------------
     pdf.add_page()
-    if os.path.exists(EMBLEM_PATH):
-        pdf.image(EMBLEM_PATH, x=93, y=8, w=25)
+    if logo_path and os.path.exists(logo_path):
+        pdf.image(logo_path, x=93, y=8, w=25)
+        
     pdf.set_y(35)
     pdf.set_font("Helvetica", "B", 16)
+    pdf.set_text_color(46, 76, 22) # Forest Green
     pdf.cell(0, 10, "FOREST DEPARTMENT", ln=1, align="C")
     pdf.set_font("Helvetica", "B", 13)
+    pdf.set_text_color(0, 0, 0)
     pdf.cell(0, 8, title_text, ln=1, align="C")
 
     # Map image
@@ -569,8 +574,8 @@ def build_pdf_report_standard(
     # Legend box
     legend_y = MAP_Y + MAP_H + LEGEND_GAP
     pdf.set_y(legend_y)
-    pdf.set_fill_color(245, 245, 240)
-    pdf.set_draw_color(180, 180, 180)
+    pdf.set_fill_color(248, 250, 246) # Light green-grey
+    pdf.set_draw_color(46, 76, 22) # Forest Green border
     pdf.rect(MAP_X, legend_y, MAP_W, 40, style="FD")
     pdf.set_font("Helvetica", "", 11)
     col1 = [
@@ -591,7 +596,7 @@ def build_pdf_report_standard(
 
     pdf.set_y(legend_y + 47)
     pdf.set_font("Helvetica", "I", 9)
-    pdf.set_text_color(80, 80, 80)
+    pdf.set_text_color(100, 100, 100)
     pdf.multi_cell(0, 5, "Note: Satellite background (Esri) and boundaries are automatically generated.")
     pdf.set_text_color(0, 0, 0)
 
@@ -600,14 +605,22 @@ def build_pdf_report_standard(
     # -------------------------------
     pdf.add_page()
     if overlay_gdf is not None and not overlay_gdf.empty:
-        pdf.set_font("Helvetica", "B", 12)
+        pdf.set_font("Helvetica", "B", 14)
+        pdf.set_text_color(46, 76, 22)
         pdf.cell(0, 10, "Corner GPS of Overlay Area", ln=1, align="C")
+        pdf.ln(4)
+        
+        # Center the table (175 width total)
+        pdf.set_x((210 - 175) / 2)
         pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(25, 8, "S.No", 1, align="C")
-        pdf.cell(75, 8, "Latitude", 1, align="C")
-        pdf.cell(75, 8, "Longitude", 1, align="C")
-        pdf.ln(8)
+        pdf.set_fill_color(46, 76, 22) # Green header
+        pdf.set_text_color(255, 255, 255) # White text
+        pdf.cell(25, 10, "S.No", 1, 0, align="C", fill=True)
+        pdf.cell(75, 10, "Latitude", 1, 0, align="C", fill=True)
+        pdf.cell(75, 10, "Longitude", 1, 1, align="C", fill=True)
+        
         pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(0, 0, 0)
         row = 1
         overlay = overlay_gdf.to_crs(4326)
         for geom in overlay.geometry:
@@ -620,19 +633,29 @@ def build_pdf_report_standard(
                 for part in geom.geoms:
                     coords.extend(list(part.exterior.coords)[:-1])
             for lon, lat, *_ in coords:
-                pdf.cell(25, 7, str(row), 1)
-                pdf.cell(75, 7, f"{lat:.6f}", 1, align="R")
-                pdf.cell(75, 7, f"{lon:.6f}", 1, align="R")
-                pdf.ln(7)
+                # Zebra striping
+                fill = (row % 2 == 0)
+                if fill:
+                    pdf.set_fill_color(240, 248, 240) # Light green tint
+                else:
+                    pdf.set_fill_color(255, 255, 255)
+                    
+                pdf.set_x((210 - 175) / 2)
+                pdf.cell(25, 7, str(row), 1, 0, align="C", fill=fill)
+                pdf.cell(75, 7, f"{lat:.6f}", 1, 0, align="R", fill=fill)
+                pdf.cell(75, 7, f"{lon:.6f}", 1, 1, align="R", fill=fill)
                 row += 1
                 if pdf.get_y() > 240:
                     pdf.add_page()
+                    pdf.set_x((210 - 175) / 2)
                     pdf.set_font("Helvetica", "B", 11)
-                    pdf.cell(25, 8, "S.No", 1, align="C")
-                    pdf.cell(75, 8, "Latitude", 1, align="C")
-                    pdf.cell(75, 8, "Longitude", 1, align="C")
-                    pdf.ln(8)
+                    pdf.set_fill_color(46, 76, 22) # Green header
+                    pdf.set_text_color(255, 255, 255) # White text
+                    pdf.cell(25, 10, "S.No", 1, 0, align="C", fill=True)
+                    pdf.cell(75, 10, "Latitude", 1, 0, align="C", fill=True)
+                    pdf.cell(75, 10, "Longitude", 1, 1, align="C", fill=True)
                     pdf.set_font("Helvetica", "", 10)
+                    pdf.set_text_color(0, 0, 0)
 
 
     # -------------------------------
@@ -743,28 +766,42 @@ def build_pdf_report_standard(
             if pdf.get_y() + est_height > page_bottom_limit:
                 pdf.add_page()
 
-            pdf.set_font("Helvetica", "B", 12)
+            pdf.set_font("Helvetica", "B", 14)
+            pdf.set_text_color(46, 76, 22)
             pdf.cell(0, 10, "Grid Area Inside Overlay Boundary (Detail)", ln=1, align="C")
-            pdf.ln(2)
+            pdf.ln(4)
+            
+            pdf.set_x(50)
             pdf.set_font("Helvetica", "B", 11)
-            pdf.cell(30, 8, "Grid ID", 1, align="C")
-            pdf.cell(80, 8, "Area Inside Overlay (Ha)", 1, align="C")
-            pdf.ln(8)
+            pdf.set_fill_color(46, 76, 22) # Green header
+            pdf.set_text_color(255, 255, 255) # White text
+            pdf.cell(30, 10, "Grid ID", 1, 0, align="C", fill=True)
+            pdf.cell(80, 10, "Area Inside Overlay (Ha)", 1, 1, align="C", fill=True)
             pdf.set_font("Helvetica", "", 11)
 
             if df_overlay is not None and not df_overlay.empty:
+                row_idx = 1
                 for idx, row in df_overlay.iterrows():
-                    # set colored grid id
+                    pdf.set_x(50)
+                    fill = (row_idx % 2 == 0)
+                    if fill:
+                        pdf.set_fill_color(240, 248, 240)
+                    else:
+                        pdf.set_fill_color(255, 255, 255)
+                        
                     pdf.set_text_color(0, 0, 0)
-                    pdf.cell(30, 8, str(int(row["grid_id"])), 1, align="C")
-                    pdf.cell(80, 8, f"{row['intersection_area_ha']:.4f}", 1, align="R")
-                    pdf.ln(8)
+                    pdf.cell(30, 8, str(int(row["grid_id"])), 1, 0, align="C", fill=fill)
+                    pdf.cell(80, 8, f"{row['intersection_area_ha']:.4f}", 1, 1, align="R", fill=fill)
+                    row_idx += 1
+                    
                     if pdf.get_y() > 240:
                         pdf.add_page()
+                        pdf.set_x(50)
                         pdf.set_font("Helvetica", "B", 11)
-                        pdf.cell(30, 8, "Grid ID", 1, align="C")
-                        pdf.cell(80, 8, "Area Inside Overlay (Ha)", 1, align="C")
-                        pdf.ln(8)
+                        pdf.set_fill_color(46, 76, 22)
+                        pdf.set_text_color(255, 255, 255)
+                        pdf.cell(30, 10, "Grid ID", 1, 0, align="C", fill=True)
+                        pdf.cell(80, 10, "Area Inside Overlay (Ha)", 1, 1, align="C", fill=True)
                         pdf.set_font("Helvetica", "", 11)
             else:
                 pdf.cell(0, 8, "No intersecting grid cells.", ln=1)
@@ -772,7 +809,9 @@ def build_pdf_report_standard(
             # Total area left-aligned at bottom (rounded up)
             pdf.ln(4)
             pdf.set_font("Helvetica", "B", 12)
+            pdf.set_text_color(46, 76, 22)
             pdf.cell(0, 10, f"TOTAL AREA INSIDE OVERLAY: {math.ceil(total_grid_area_ha)} Ha", ln=1, align="L")
+            pdf.set_text_color(0, 0, 0)
         except Exception as _e:
             pdf.set_font("Helvetica", "I", 10)
             pdf.cell(0, 8, f"Overlay detail table generation failed: {_e}", ln=1)
@@ -867,7 +906,7 @@ cell_size = st.session_state.get("cell_size", cell_size)
 # CACHED OUTPUT GENERATOR
 # ================================================================
 @st.cache_data(show_spinner=False)
-def generate_all_outputs(aoi_path, overlay_path, user_inputs, cell_size, title_text, density, area_invasive):
+def generate_all_outputs(aoi_path, overlay_path, user_inputs, cell_size, title_text, density, area_invasive, logo_path=None):
     # --- Read and clean AOI to polygons only ---
     gdf = read_kml_safely(aoi_path)
     gdf = clean_polygon_gdf(gdf)
@@ -888,7 +927,7 @@ def generate_all_outputs(aoi_path, overlay_path, user_inputs, cell_size, title_t
     pdf_bytes = build_pdf_report_standard(
         cells_ll, merged_ll, user_inputs, cell_size,
         overlay_gdf, title_text, density, area_invasive,
-        labeled_kml=labeled_kml  # ✅ new argument added here
+        labeled_kml=labeled_kml, logo_path=logo_path
     )
 
     return {
@@ -991,6 +1030,21 @@ if st.session_state.get("generated", False):
     else:
         ov_path = None
 
+    def get_stable_temp_path_img(uploaded_file):
+        if not uploaded_file:
+            return None
+        file_bytes = uploaded_file.getvalue()
+        file_hash = hashlib.md5(file_bytes).hexdigest()
+        ext = os.path.splitext(uploaded_file.name)[1].lower()
+        tmp_path = os.path.join(tempfile.gettempdir(), f"img_{file_hash}{ext}")
+        if not os.path.exists(tmp_path):
+            with open(tmp_path, "wb") as f:
+                f.write(file_bytes)
+        return tmp_path
+
+    # Handle Logo
+    logo_path = get_stable_temp_path_img(logo_file)
+
     # ============================================================
     # Run cached generator (no recomputation, no reload on download)
     # ============================================================
@@ -999,7 +1053,7 @@ if st.session_state.get("generated", False):
             outputs = generate_all_outputs(
                 aoi_path, ov_path,
                 st.session_state["user_inputs"],
-                cell_size, title_text, density, area_invasive
+                cell_size, title_text, density, area_invasive, logo_path
         )
     except ValueError as e:
         st.error(f"❌ {e}")
