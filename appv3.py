@@ -565,6 +565,30 @@ def build_pdf_report_standard(
     if overlay_gdf is not None and not overlay_gdf.empty:
         overlay_gdf.to_crs(3857).boundary.plot(ax=ax, color="#FFD700", linewidth=3)
     ctx.add_basemap(ax, crs=3857, source=ctx.providers.Esri.WorldImagery, attribution=False)
+    
+    import matplotlib.patheffects as pe
+    try:
+        from matplotlib_scalebar.scalebar import ScaleBar
+        # 3857 coordinates are in meters at the equator. 
+        # Calculate latitude scale factor for accurate scalebar
+        center_lat = gpd.GeoSeries([merged_ll], crs="EPSG:4326").geometry.centroid.y.iloc[0]
+        import math
+        scale_factor = 1.0 / math.cos(math.radians(center_lat))
+        
+        scalebar = ScaleBar(dx=scale_factor, units="m", location="lower right", 
+                            box_alpha=0.7, color="black", box_color="white", border_pad=0.5)
+        ax.add_artist(scalebar)
+    except Exception as e:
+        print("Scalebar error:", e)
+
+    # North Arrow
+    x, y, arrow_length = 0.05, 0.95, 0.1
+    ax.annotate('N', xy=(x, y), xytext=(x, y-arrow_length),
+                arrowprops=dict(facecolor='white', edgecolor='black', width=4, headwidth=12),
+                ha='center', va='center', fontsize=16, color='white',
+                fontweight='bold', xycoords=ax.transAxes,
+                path_effects=[pe.withStroke(linewidth=3, foreground='black')])
+                
     ax.axis("off")
     plt.tight_layout(pad=0.1)
     fig.savefig(map_img, dpi=250, bbox_inches="tight")
@@ -695,6 +719,28 @@ def build_pdf_report_standard(
                 overlay_3857.boundary.plot(ax=ax, color="#FFD700", linewidth=3)
                 # Add basemap (Esri World Imagery)
                 ctx.add_basemap(ax, crs=3857, source=ctx.providers.Esri.WorldImagery, attribution=False)
+                
+                try:
+                    from matplotlib_scalebar.scalebar import ScaleBar
+                    center_lat = overlay_gdf.geometry.centroid.y.iloc[0]
+                    import math
+                    scale_factor = 1.0 / math.cos(math.radians(center_lat))
+                    
+                    scalebar = ScaleBar(dx=scale_factor, units="m", location="lower right", 
+                                        box_alpha=0.7, color="black", box_color="white", border_pad=0.5)
+                    ax.add_artist(scalebar)
+                except Exception as e:
+                    print("Scalebar error Map 2:", e)
+
+                import matplotlib.patheffects as pe
+                # North Arrow
+                x, y, arrow_length = 0.05, 0.95, 0.1
+                ax.annotate('N', xy=(x, y), xytext=(x, y-arrow_length),
+                            arrowprops=dict(facecolor='white', edgecolor='black', width=4, headwidth=12),
+                            ha='center', va='center', fontsize=16, color='white',
+                            fontweight='bold', xycoords=ax.transAxes,
+                            path_effects=[pe.withStroke(linewidth=3, foreground='black')])
+                            
                 ax.axis('off')
                 import matplotlib.patheffects as pe
                 

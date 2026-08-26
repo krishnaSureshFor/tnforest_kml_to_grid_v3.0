@@ -38,3 +38,5 @@ shapely
 pillow
 qrcode[pil]
 PyGithub>=2.3.0
+
+matplotlib-scalebar
